@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mapa de Reclamos - Olavarría</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div id="adminSessionBar" class="admin-session-bar" style="display: none;">
+        <span>🔒 Modo Panel Auditor Activado</span>
+        <div class="admin-actions-nav">
+            <button id="toggleDashBtn" class="btn-toggle-dash">Abrir Dashboard</button>
+            <button id="exitSessionBtn" class="btn-exit-session">Salir del Admin</button>
+        </div>
+    </div>
+
+    <div id="mainPage" class="main-page">
+        <header class="top-header">
+            <div class="header-left">
+                <img src="public/456193182_1050157173398567_6145674300254296172_n.png" alt="Logo" class="site-logo">
+                <div class="header-titles">
+                    <h1>MAPA DE RECLAMOS Y DENUNCIAS <span>CIUDADANAS</span></h1>
+                    <p class="header-subtitle">Plataforma interactiva colaborativa: reporta baches, veredas rotas, luminarias oscuras y otros incidentes urbanos. Un mapa participativo donde los vecinos monitorean de forma transparente el estado de la infraestructura en Olavarría.</p>
+                </div>
+            </div>
+            <div class="header-right">
+                <button id="newClaimBtn" class="btn-new-claim">+ NUEVO RECLAMO</button>
+            </div>
+        </header>
+
+        <div class="main-content">
+            <div class="map-section">
+                <div id="map"></div>
+
+                <div class="category-filter-bar" id="categoryFilterBar">
+                    <button class="filter-btn active" data-cat="all" title="Ver todos">👁️‍🗨️</button>
+                    <button class="filter-btn" data-cat="vereda" title="Veredas">🧱</button>
+                    <button class="filter-btn" data-cat="bache" title="Baches">🕳️</button>
+                    <button class="filter-btn" data-cat="arbol" title="Árboles">🌳</button>
+                    <button class="filter-btn" data-cat="luz" title="Alumbrado">💡</button>
+                    <button class="filter-btn" data-cat="basura" title="Basura">🚮</button>
+                    <button class="filter-btn" data-cat="otro" title="Otros">🚧</button>
+                </div>
+
+                <div class="recent-claims-trigger" id="recentClaimsTrigger">
+                    💬 <span class="trigger-text">Recientes</span> (<span id="claimCounter">0</span>)
+                </div>
+
+                <div class="recent-claims-popup hidden" id="recentClaimsPopup">
+                    <div class="recent-popup-header">
+                        <h4>📌 RECLAMOS RECIENTES</h4>
+                        <button id="closeRecentPopup" class="close-popup-btn">×</button>
+                    </div>
+                    <div class="recent-popup-body" id="claimsList">
+                        </div>
+                </div>
+            </div>
+        </div>
+
+        <footer class="site-footer">
+            <div class="footer-grid">
+                <div class="footer-col brand-col">
+                    <h3>RECLAMOS OLAVARRÍA</h3>
+                    <p>Plataforma ciudadana independiente para la visibilidad y gestión transparente de incidencias en toda la infraestructura comunal.</p>
+                </div>
+                <div class="footer-col counter-col">
+                    <div class="political-counter">
+                        <span class="counter-label">DÍAS PARA QUE SE VAYA WESNER</span>
+                        <span id="daysCounter" class="counter-number">...</span>
+                    </div>
+                </div>
+                <div class="footer-col copy-col">
+                    <p>&copy; 2026 Ciudadanos de Olavarría.</p>
+                    <p class="footer-legal-tag">Desarrollado en base a métricas de transparencia y control público municipal.</p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <div id="claimModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Reportar Incidente</h2>
+                <button id="closeModal" class="btn-close">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-step active" data-step="1">
+                    <h3>1. Información de Identidad</h3>
+                    <input type="text" id="claimName" placeholder="Ingresa tu nombre" class="input-field">
+                    <input type="email" id="claimEmail" placeholder="Tu correo electrónico" class="input-field">
+                </div>
+                <div class="form-step" data-step="2">
+                    <h3>2. Elige la categoría</h3>
+                    <div class="category-grid" id="categoryGrid">
+                        <div class="category-option" data-value="vereda">
+                            <span class="cat-icon">🧱</span>
+                            <span class="cat-label">Vereda rota</span>
+                        </div>
+                        <div class="category-option" data-value="bache">
+                            <span class="cat-icon">🕳️</span>
+                            <span class="cat-label">Bache</span>
+                        </div>
+                        <div class="category-option" data-value="arbol">
+                            <span class="cat-icon">🌳</span>
+                            <span class="cat-label">Árbol caído</span>
+                        </div>
+                        <div class="category-option" data-value="luz">
+                            <span class="cat-icon">💡</span>
+                            <span class="cat-label">Alumbrado</span>
+                        </div>
+                        <div class="category-option" data-value="basura">
+                            <span class="cat-icon">🚮</span>
+                            <span class="cat-label">Basura</span>
+                        </div>
+                        <div class="category-option" data-value="otro">
+                            <span class="cat-icon">🚧</span>
+                            <span class="cat-label">Otros</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-step" data-step="3">
+                    <h3>3. Nivel de Urgencia</h3>
+                    <div class="category-grid" id="urgencyGrid">
+                        <div class="category-option" data-value="normal">
+                            <span class="cat-icon">🟠</span>
+                            <span class="cat-label">Normal/Estándar</span>
+                        </div>
+                        <div class="category-option" data-value="alta">
+                            <span class="cat-icon">🔴</span>
+                            <span class="cat-label">Alta/Peligrosa</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-step" data-step="4">
+                    <h3>4. Geolocalización</h3>
+                    <button type="button" id="useGPS" class="btn-location">📍 Capturar por GPS</button>
+                    <div style="text-align:center; margin:8px 0; font-size:11px; color:#64748b; font-weight: 600;">O REGISTRA DIRECCIÓN MANUAL</div>
+                    <input type="text" id="claimAddress" placeholder="Ej: Alsina 2400" class="input-field">
+                    <div id="locationDisplay" style="display:none; font-size:12px; color:#10b981; font-weight:600; text-align:center;"></div>
+                </div>
+                <div class="form-step" data-step="5">
+                    <h3>5. Añadir Detalles</h3>
+                    <textarea id="claimDescription" placeholder="Describe brevemente el problema aquí..." class="input-field" style="min-height:100px; resize:none;"></textarea>
+                </div>
+                <div class="form-step" data-step="6">
+                    <h3>6. Evidencia del Daño</h3>
+                    <div id="photoDropZone" class="photo-zone">
+                        <input type="file" id="claimPhoto" accept="image/*" style="display:none;">
+                        <span style="font-size:30px;">📸</span>
+                        <p style="font-size:13px; font-weight:700; margin-top:4px; color: var(--text-main);">Cargar imagen</p>
+                        <span style="font-size:10px; color:var(--text-muted);">Máximo 5MB (Fotos de alta resolución)</span>
+                    </div>
+                    <div id="photoPreview" style="display:none; text-align:center;">
+                        <div class="photo-preview"><img id="photoImg" alt="Preview"></div>
+                        <button type="button" id="removePhoto" class="btn-secondary" style="padding:4px 10px; font-size:11px; margin-top:6px;">Quitar foto</button>
+                    </div>
+                </div>
+                <div id="formMessage" class="form-message"></div>
+            </div>
+            <div class="modal-footer">
+                <button id="prevBtn" class="btn-secondary" style="display:none;">Atrás</button>
+                <button id="nextBtn" class="btn-primary">Siguiente</button>
+                <button id="submitBtn" class="btn-success" style="display:none;">Enviar Reporte</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="detailPanel" class="detail-panel">
+        <div class="detail-header">
+            <h2 id="detailTitle">Detalle de Incidente</h2>
+            <button id="closeDetail" class="btn-close">×</button>
+        </div>
+        <div class="detail-body" id="detailBody"></div>
+    </div>
+
+    <div id="adminPanel" class="admin-panel hidden">
+        <header class="admin-header">
+            <h1>Panel Interno de Moderación</h1>
+            <button id="closeDashBtn" class="btn-close-dash">Cerrar Dashboard</button>
+        </header>
+        <div class="admin-main">
+            <aside class="admin-sidebar">
+                <div class="admin-stats">
+                    <div class="stat-card">
+                        <div class="stat-value" id="adminStatTotal">0</div>
+                        <div class="stat-label">Totales</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="adminStatPending" style="color:#f59e0b;">0</div>
+                        <div class="stat-label">Pendientes</div>
+                    </div>
+                </div>
+                <nav class="admin-nav">
+                    <button class="nav-btn active" data-section="pending">⏳ Por Revisar</button>
+                    <button class="nav-btn" data-section="approved">✅ Aprobados</button>
+                    <button class="nav-btn" data-section="rejected">❌ Descartados</button>
+                </nav>
+            </aside>
+            <main class="admin-content">
+                <div id="adminList" class="admin-list"></div>
+            </main>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
