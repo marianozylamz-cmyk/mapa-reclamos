@@ -1,14 +1,14 @@
 const OLAVARRIA_LAT = -36.8927;
 const OLAVARRIA_LNG = -60.3225;
-const STORAGE_KEY = 'reclamosData';
 const ADMIN_CODE = 'varilla';
 
+// 1. Nuevas Categorías Oficiales de Olavarría
 const CATEGORIES = {
-    vereda: { icon: '🧱', label: 'Vereda rota' },
-    bache: { icon: '🕳️', label: 'Bache' },
-    arbol: { icon: '🌳', label: 'Árbol caído' },
-    luz: { icon: '💡', label: 'Alumbrado' },
-    basura: { icon: '🚮', label: 'Basura masiva' },
+    plazas: { icon: '🌳', label: 'Parques/Paseos/Plazas' },
+    salud: { icon: '🏥', label: 'Salud' },
+    alumbrado: { icon: '💡', label: 'Alumbrado' },
+    calle: { icon: '🕳️', label: 'Bache/Calle/Camino' },
+    basura: { icon: '🚮', label: 'Basura' },
     otro: { icon: '🚧', label: 'Otros' }
 };
 
@@ -33,7 +33,7 @@ const state = {
 
 document.addEventListener('DOMContentLoaded', async () => {
     checkAdminAccess();
-    await loadFirebaseData(); // 👈 Nueva función asíncrona
+    await loadFirebaseData();
     initLeafletMap();
     setupApplicationEvents();
     renderPublicClaimsList();
@@ -143,7 +143,7 @@ function setupApplicationEvents() {
         window.location.href = window.location.pathname; 
     });
 
-    // Filtros del Sidebar del Dashboard Admin
+    // Filtros del Sidebar del Dashboard Admin (4 Bandejas)
     document.querySelectorAll('.admin-nav .nav-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             document.querySelectorAll('.admin-nav .nav-btn').forEach(b => b.classList.remove('active'));
@@ -276,16 +276,13 @@ async function executeSubmitForm() {
     let finalLat = OLAVARRIA_LAT;
     let finalLng = OLAVARRIA_LNG;
 
-    // 1. Si el usuario usó el botón de GPS, usamos esas coordenadas exactas
     if (state.currentLocation) {
         finalLat = state.currentLocation.lat;
         finalLng = state.currentLocation.lng;
     } else {
-        // 2. Si escribió texto, usamos el buscador de OpenStreetMap acotado a Olavarría
         const direccionEscrita = document.getElementById('claimAddress').value.trim();
         if (direccionEscrita) {
             try {
-                // Le sumamos ", Olavarria, Buenos Aires, Argentina" para que no busque la calle en otra provincia
                 const queryBusqueda = encodeURIComponent(`${direccionEscrita}, Olavarria, Buenos Aires, Argentina`);
                 const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${queryBusqueda}&limit=1`);
                 const data = await response.json();
@@ -296,7 +293,6 @@ async function executeSubmitForm() {
                     console.log(`📍 Dirección encontrada por buscador: ${finalLat}, ${finalLng}`);
                 } else {
                     console.warn("⚠️ No se encontró la altura exacta, usando ubicación aproximada.");
-                    // Si no encuentra la altura, al menos tira el pin cerca del centro sin el random loco anterior
                     finalLat = OLAVARRIA_LAT + (Math.random() - 0.5) * 0.005;
                     finalLng = OLAVARRIA_LNG + (Math.random() - 0.5) * 0.005;
                 }
@@ -306,7 +302,6 @@ async function executeSubmitForm() {
         }
     }
 
-    // 3. Armamos el objeto final con las coordenadas de verdad
     const newClaimObject = {
         id: Date.now(),
         claimId,
@@ -386,6 +381,7 @@ function renderMapPins() {
     state.markers.forEach(m => state.map.removeLayer(m));
     state.markers = [];
 
+    // El mapa público muestra ÚNICAMENTE los reclamos aprobados activos
     let visibleList = state.isAdmin ? state.claims : state.claims.filter(c => c.status === 'approved');
 
     if (state.activeCategoryFilter !== 'all') {
@@ -405,22 +401,30 @@ function renderMapPins() {
 
         const markerOptions = { icon: iconHtml };
         
-        // Agregar propiedad draggable únicamente si es admin
         if (state.isAdmin) {
             markerOptions.draggable = true;
         }
 
         const marker = L.marker([claim.lat, claim.lng], markerOptions).addTo(state.map);
         
-        // Evento dragend para guardar nuevas coordenadas si es admin
         if (state.isAdmin) {
-            marker.on('dragend', function(e) {
+            marker.on('dragend', async function(e) {
                 const newLat = e.target.getLatLng().lat;
                 const newLng = e.target.getLatLng().lng;
                 
-                claim.lat = newLat;
-                claim.lng = newLng;
-                saveDataToStorage();
+                try {
+                    const { doc, updateDoc } = window.dbMethods;
+                    const docRef = doc(window.db, "reclamos", claim._fbId);
+                    
+                    await updateDoc(docRef, { lat: newLat, lng: newLng });
+                    
+                    claim.lat = newLat;
+                    claim.lng = newLng;
+                    console.log("📌 Nueva ubicación guardada en Firebase para el pin:", claim.claimId);
+                } catch (error) {
+                    console.error("❌ Error al mover el pin en Firebase:", error);
+                    alert("No se pudo guardar la nueva posición en el servidor.");
+                }
             });
         }
         
@@ -501,10 +505,27 @@ window.globalOpenDetailWindow = function(id) {
                 </div>
             </div>
             <div class="detail-actions">
+        `;
+
+        // Flujo Dinámico de Botones según el estado actual del reclamo inspeccionado
+        if (claim.status === 'pending') {
+            html += `
                 <button class="btn-action btn-approve" onclick="dispatchStatus(${claim.id}, 'approved')">Aprobar Caso</button>
                 <button class="btn-action btn-reject" onclick="dispatchStatus(${claim.id}, 'rejected')">Descartar</button>
-            </div>
-        `;
+            `;
+        } else if (claim.status === 'approved') {
+            html += `
+                <button class="btn-action" style="background:#8b5cf6; color:white;" onclick="dispatchStatus(${claim.id}, 'solved')">🛠️ Marcar Solucionado</button>
+                <button class="btn-action btn-reject" onclick="deleteClaimFromDatabase(${claim.id})">🗑️ Borrar Reclamo</button>
+            `;
+        } else {
+            // Bandejas de Solucionados o Descartados solo permiten borrado permanente de limpieza
+            html += `
+                <button class="btn-action btn-reject" style="width:100%;" onclick="deleteClaimFromDatabase(${claim.id})">🗑️ Eliminar Definitivamente</button>
+            `;
+        }
+
+        html += `</div>`;
     }
 
     document.getElementById('detailBody').innerHTML = html;
@@ -519,16 +540,10 @@ async function dispatchStatus(id, newStatus) {
     if (!claim) return;
 
     try {
-        // 1. Extraemos los métodos de actualización de Firebase
         const { doc, updateDoc } = window.dbMethods;
-
-        // 2. Apuntamos al documento exacto en Firebase usando su _fbId
         const docRef = doc(window.db, "reclamos", claim._fbId);
 
-        // 3. Impactamos el nuevo estado en la nube
         await updateDoc(docRef, { status: newStatus });
-
-        // 4. Si todo sale bien, actualizamos el estado local y la interfaz
         claim.status = newStatus;
         
         renderPublicClaimsList();
@@ -539,9 +554,42 @@ async function dispatchStatus(id, newStatus) {
         console.log(`✓ Estado actualizado en Firebase a: ${newStatus}`);
     } catch (error) {
         console.error("❌ Error al actualizar el estado en Firebase:", error);
-        alert("No se pudo guardar el cambio en el servidor. Revisá tu conexión.");
+        alert("No se pudo guardar el cambio en el servidor.");
     }
 }
+
+// Borrado físico real de Firebase Firestore
+async function deleteClaimFromDatabase(id) {
+    const claim = state.claims.find(c => c.id === id);
+    if (!claim) return;
+
+    if (!confirm(`¿Estás seguro de que querés eliminar el reclamo ${claim.claimId} de forma permanente? No se podrá recuperar.`)) {
+        return;
+    }
+
+    try {
+        const { doc } = window.dbMethods;
+        // Importamos dinámicamente deleteDoc desde window ya que no estaba precargado por scope directo
+        const { deleteDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+        
+        const docRef = doc(window.db, "reclamos", claim._fbId);
+        await deleteDoc(docRef);
+
+        // Remover del estado local de la aplicación
+        state.claims = state.claims.filter(c => c.id !== id);
+
+        renderPublicClaimsList();
+        renderMapPins();
+        if (state.isAdmin) syncAdminDashboard();
+        document.getElementById('detailPanel').classList.remove('visible');
+        
+        console.log("🗑️ Reclamo eliminado físicamente de Firebase Firestore.");
+    } catch (error) {
+        console.error("❌ Error al eliminar el documento de Firebase:", error);
+        alert("Ocurrió un error al intentar borrar el registro del servidor.");
+    }
+}
+
 function renderPublicClaimsList() {
     let approved = state.claims.filter(c => c.status === 'approved');
     
@@ -564,12 +612,17 @@ function renderPublicClaimsList() {
             </div>
         `;
     }).join('');
-    document.getElementById('claimsList').innerHTML = html || '<div style="padding:16px; font-size:11px; color:#64748b; text-align:center; font-weight:600;">Sin reportes para esta sección.</div>';
+    document.getElementById('claimsList').innerHTML = html || '<div style="padding:166px; font-size:11px; color:#64748b; text-align:center; font-weight:600;">Sin reportes para esta sección.</div>';
 }
 
+// Sincronización Matemática Completa de las 5 Métrica del Sidebar
 function syncAdminDashboard() {
     document.getElementById('adminStatTotal').textContent = state.claims.length;
     document.getElementById('adminStatPending').textContent = state.claims.filter(c => c.status === 'pending').length;
+    document.getElementById('adminStatApproved').textContent = state.claims.filter(c => c.status === 'approved').length;
+    document.getElementById('adminStatSolved').textContent = state.claims.filter(c => c.status === 'solved').length;
+    document.getElementById('adminStatRejected').textContent = state.claims.filter(c => c.status === 'rejected').length;
+    
     const currentSection = document.querySelector('.admin-nav .nav-btn.active').dataset.section;
     renderAdminViewCards(currentSection);
 }
@@ -589,6 +642,7 @@ function renderAdminViewCards(section) {
     }).join('');
     document.getElementById('adminList').innerHTML = html || '<p style="font-size:12px; color:#64748b; padding:10px; font-weight:600;">Sin registros en esta bandeja.</p>';
 }
+
 function initPoliticalCounter() {
     const startDate = new Date('2023-12-10T00:00:00');
     const targetDate = new Date('2027-12-10T00:00:00');
@@ -635,21 +689,17 @@ function initPoliticalCounter() {
         });
     }
 }
+
 async function loadFirebaseData() {
     try {
-        // Traemos los métodos que exportamos desde el index.html
         const { collection, getDocs } = window.dbMethods;
-        
-        // Hacemos la consulta a la colección "reclamos" en Firebase
         const querySnapshot = await getDocs(collection(window.db, "reclamos"));
         
         const cargados = [];
         querySnapshot.forEach((doc) => {
-            // Combinamos los datos del reclamo con su ID de Firebase
             cargados.push({ _fbId: doc.id, ...doc.data() });
         });
         
-        // Guardamos todo en el estado de tu aplicación
         state.claims = cargados;
         console.log("🔥 Datos cargados con éxito desde Firebase:", state.claims.length);
     } catch (error) {

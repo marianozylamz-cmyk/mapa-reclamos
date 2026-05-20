@@ -367,7 +367,7 @@ html, body {
 .btn-approve { background: #10b981; color: white; }
 .btn-reject { background: #ef4444; color: white; }
 
-/* ==================== DASHBOARD AUDITOR INTERNO - FLEXBOX FLUIDO ==================== */
+/* ==================== DASHBOARD AUDITOR INTERNO - REESTRUCTURADO ==================== */
 .admin-panel { 
     position: fixed; 
     top: 0; 
@@ -392,30 +392,50 @@ html, body {
 }
 .admin-header h1 { font-size: 16px; font-weight: 800; }
 .btn-close-dash { background: #475569; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 600; cursor: pointer; }
+
 .admin-main { 
     display: flex; 
     flex: 1; 
     overflow: hidden;
     min-height: 0;
 }
+
+/* Sidebar rediseñado para soportar la columna vertical de las 5 métricas */
 .admin-sidebar { 
-    width: 240px; 
+    width: 260px; 
     background: #fff; 
     border-right: 1px solid #e2e8f0; 
-    padding: 16px; 
+    padding: 18px; 
     display: flex; 
     flex-direction: column; 
-    gap: 16px;
+    gap: 20px;
     flex-shrink: 0;
     overflow-y: auto;
 }
-.admin-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.stat-card { background: #f8fafc; border: 1px solid #e2e8f0; padding: 10px; border-radius: 8px; text-align: center; }
+
+/* Grilla vertical de una métrica abajo de la otra para máxima prolijidad */
+.admin-stats { 
+    display: flex;
+    flex-direction: column;
+    gap: 8px; 
+}
+.stat-card { 
+    background: #f8fafc; 
+    border: 1px solid #e2e8f0; 
+    padding: 12px; 
+    border-radius: 8px; 
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
 .stat-value { font-size: 18px; font-weight: 800; color: var(--dark); }
-.stat-label { font-size: 10px; color: var(--text-muted); }
+.stat-label { font-size: 11px; font-weight: 600; color: var(--text-muted); }
+
 .admin-nav { display: flex; flex-direction: column; gap: 4px; }
-.nav-btn { width: 100%; text-align: left; padding: 9px; border: none; background: none; border-radius: 6px; font-weight: 600; font-size: 12px; cursor: pointer; }
-.nav-btn.active { background: var(--primary); color: var(--dark); }
+.nav-btn { width: 100%; text-align: left; padding: 10px 12px; border: none; background: none; border-radius: 6px; font-weight: 600; font-size: 12px; cursor: pointer; transition: var(--transition); }
+.nav-btn:hover { background: #f1f5f9; }
+.nav-btn.active { background: var(--primary); color: var(--dark); font-weight: 700; }
+
 .admin-content { 
     flex: 1; 
     padding: 20px; 
@@ -430,10 +450,10 @@ html, body {
     gap: 14px;
     align-content: start;
 }
-.admin-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; }
+.admin-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; box-shadow: var(--shadow-sm); }
 .admin-card-id { font-size: 10px; font-weight: 700; color: var(--text-muted); }
-.admin-card-name { font-weight: 700; font-size: 13px; margin: 2px 0; }
-.admin-card-text { font-size: 12px; color: #475569; margin-bottom: 8px; }
+.admin-card-name { font-weight: 700; font-size: 13px; margin: 2px 0; color: var(--dark); }
+.admin-card-text { font-size: 12px; color: #475569; margin-bottom: 8px; line-height: 1.4; }
 
 /* ==================== FOOTER INSTITUTIONAL PRO ==================== */
 .site-footer { 
@@ -447,9 +467,7 @@ html, body {
 .footer-grid { display: grid; grid-template-columns: 1.2fr 0.8fr 1fr; gap: 20px; align-items: center; }
 .footer-col h3 { font-size: 13px; font-weight: 800; color: #fff; margin-bottom: 6px; letter-spacing: 0.5px; }
 .footer-col p { line-height: 1.4; color: #cbd5e1; font-size: 11px; }
-.political-counter { background: #202326; padding: 10px 16px; border-radius: 8px; text-align: center; border: 1px solid #3d4349; }
-.counter-label { display: block; font-size: 9px; color: var(--primary); font-weight: 800; letter-spacing: 0.5px; margin-bottom: 2px; }
-.counter-number { display: block; font-size: 24px; font-weight: 900; color: #ffffff; }
+
 .text-center { text-align: center; }
 .text-right { text-align: right; }
 .footer-legal-tag { font-size: 10px; color: #64748b; margin-top: 2px; }
@@ -484,7 +502,9 @@ html, body {
     .detail-panel { width: 100%; z-index: 99999; }
     .admin-main { flex-direction: column; }
     .admin-sidebar { width: 100%; height: auto; border-right: none; border-bottom: 1px solid #e2e8f0; }
+    .admin-stats { flex-direction: row; flex-wrap: wrap; display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); }
 }
+
 /* --- Contenedor de la Barra de Progreso del Gobierno --- */
 .political-counter {
     background: transparent;   /* Usa el gris oscuro nativo del footer */
@@ -530,7 +550,6 @@ html, body {
     width: 0%;                 /* Lo maneja el JS de forma dinámica */
     border-radius: 50px;
     transition: width 0.5s ease-out;
-    /* ❌ Animación eliminada: las franjas ahora son fijas y normales */
 }
 
 .political-counter .counter-number {

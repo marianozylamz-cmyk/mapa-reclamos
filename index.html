@@ -37,10 +37,10 @@
 
                 <div class="category-filter-bar" id="categoryFilterBar">
                     <button class="filter-btn active" data-cat="all" title="Ver todos">👁️‍🗨️</button>
-                    <button class="filter-btn" data-cat="vereda" title="Veredas">🧱</button>
-                    <button class="filter-btn" data-cat="bache" title="Baches">🕳️</button>
-                    <button class="filter-btn" data-cat="arbol" title="Árboles">🌳</button>
-                    <button class="filter-btn" data-cat="luz" title="Alumbrado">💡</button>
+                    <button class="filter-btn" data-cat="plazas" title="Parques / Paseos / Plazas">🌳</button>
+                    <button class="filter-btn" data-cat="salud" title="Salud">🏥</button>
+                    <button class="filter-btn" data-cat="alumbrado" title="Alumbrado">💡</button>
+                    <button class="filter-btn" data-cat="calle" title="Bache / Calle / Camino">🕳️</button>
                     <button class="filter-btn" data-cat="basura" title="Basura">🚮</button>
                     <button class="filter-btn" data-cat="otro" title="Otros">🚧</button>
                 </div>
@@ -54,8 +54,7 @@
                         <h4>📌 RECLAMOS RECIENTES</h4>
                         <button id="closeRecentPopup" class="close-popup-btn">×</button>
                     </div>
-                    <div class="recent-popup-body" id="claimsList">
-                        </div>
+                    <div class="recent-popup-body" id="claimsList"></div>
                 </div>
             </div>
         </div>
@@ -67,15 +66,13 @@
                     <p>Plataforma ciudadana independiente para la visibilidad y gestión transparente de incidencias en toda la infraestructura comunal.</p>
                 </div>
                 <div class="footer-col counter-col">
-          <div class="political-counter">
-    <span class="counter-label">DÍAS PARA CAMBIAR DE GOBIERNO</span>
-    
-    <div class="progress-container">
-        <div id="governmentProgressBar"></div>
-    </div>
-    
-    <span id="daysCounter" class="counter-number">Calculando porcentaje...</span>
-</div>
+                    <div class="political-counter">
+                        <span class="counter-label">DÍAS PARA CAMBIAR DE GOBIERMANO</span>
+                        <div class="progress-container">
+                            <div id="governmentProgressBar"></div>
+                        </div>
+                        <span id="daysCounter" class="counter-number">Calculando porcentaje...</span>
+                    </div>
                 </div>
                 <div class="footer-col copy-col">
                     <p>&copy; 2026 Ciudadanos de Olavarría.</p>
@@ -100,21 +97,21 @@
                 <div class="form-step" data-step="2">
                     <h3>2. Elige la categoría</h3>
                     <div class="category-grid" id="categoryGrid">
-                        <div class="category-option" data-value="vereda">
-                            <span class="cat-icon">🧱</span>
-                            <span class="cat-label">Vereda rota</span>
-                        </div>
-                        <div class="category-option" data-value="bache">
-                            <span class="cat-icon">🕳️</span>
-                            <span class="cat-label">Bache</span>
-                        </div>
-                        <div class="category-option" data-value="arbol">
+                        <div class="category-option" data-value="plazas">
                             <span class="cat-icon">🌳</span>
-                            <span class="cat-label">Árbol caído</span>
+                            <span class="cat-label">Parques/Paseos/Plazas</span>
                         </div>
-                        <div class="category-option" data-value="luz">
+                        <div class="category-option" data-value="salud">
+                            <span class="cat-icon">🏥</span>
+                            <span class="cat-label">Salud</span>
+                        </div>
+                        <div class="category-option" data-value="alumbrado">
                             <span class="cat-icon">💡</span>
                             <span class="cat-label">Alumbrado</span>
+                        </div>
+                        <div class="category-option" data-value="calle">
+                            <span class="cat-icon">🕳️</span>
+                            <span class="cat-label">Bache/Calle/Camino</span>
                         </div>
                         <div class="category-option" data-value="basura">
                             <span class="cat-icon">🚮</span>
@@ -197,10 +194,23 @@
                         <div class="stat-value" id="adminStatPending" style="color:#f59e0b;">0</div>
                         <div class="stat-label">Pendientes</div>
                     </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="adminStatApproved" style="color:#10b981;">0</div>
+                        <div class="stat-label">Aprobados</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="adminStatSolved" style="color:#8b5cf6;">0</div>
+                        <div class="stat-label">Arreglados</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="adminStatRejected" style="color:#64748b;">0</div>
+                        <div class="stat-label">Descartados</div>
+                    </div>
                 </div>
                 <nav class="admin-nav">
                     <button class="nav-btn active" data-section="pending">⏳ Por Revisar</button>
                     <button class="nav-btn" data-section="approved">✅ Aprobados</button>
+                    <button class="nav-btn" data-section="solved">🛠️ Solucionados</button>
                     <button class="nav-btn" data-section="rejected">❌ Descartados</button>
                 </nav>
             </aside>
@@ -210,7 +220,7 @@
         </div>
     </div>
 
-   <script type="module">
+    <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
         import { getFirestore, collection, addDoc, getDocs, query, where, updateDoc, doc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
@@ -231,7 +241,6 @@
     </script>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    
     <script src="app.js"></script>
 </body>
 </html>
