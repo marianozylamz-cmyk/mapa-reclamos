@@ -523,18 +523,43 @@ function renderAdminViewCards(section) {
     }).join('');
     document.getElementById('adminList').innerHTML = html || '<p style="font-size:12px; color:#64748b; padding:10px; font-weight:600;">Sin registros en esta bandeja.</p>';
 }
-
 function initPoliticalCounter() {
+    const startDate = new Date('2023-12-10T00:00:00');
     const targetDate = new Date('2027-12-10T00:00:00');
+    
     const display = document.getElementById('daysCounter');
+    const progressBar = document.getElementById('governmentProgressBar');
+
     const run = () => {
-        const diff = targetDate - new Date();
-        display.textContent = diff > 0 ? Math.floor(diff / (1000 * 60 * 60 * 24)) : '0';
+        const now = new Date();
+        
+        // 1. Calcular el total de días del mandato de 4 años
+        const totalDuration = targetDate - startDate;
+        
+        // 2. Calcular cuánto tiempo transcurrió desde el inicio hasta hoy
+        const timeElapsed = now - startDate;
+        
+        // 3. Calcular cuántos días quedan para el cambio de gobierno
+        const timeRemaining = targetDate - now;
+        const daysRemaining = Math.max(0, Math.floor(timeRemaining / (1000 * 60 * 60 * 24)));
+
+        // 4. Calcular el porcentaje completado (entre 0% y 100%)
+        let percentComplete = (timeElapsed / totalDuration) * 100;
+        percentComplete = Math.min(100, Math.max(0, percentComplete)); // Asegurar límites
+
+        // 5. Renderizar en la interfaz de usuario
+        if (progressBar) {
+            progressBar.style.width = `${percentComplete.toFixed(1)}%`;
+        }
+        if (display) {
+            display.textContent = `Transcurrido: ${percentComplete.toFixed(1)}% (${daysRemaining} días restantes)`;
+        }
     };
+
     run();
     setInterval(run, 60000);
 
-    // TRUCO NUEVO: Doble clic en el contador para loguearse como Admin
+    // TRUCO NUEVO: Doble clic en el contador para loguearse como Admin (INTACTO)
     const block = document.querySelector('.political-counter');
     if (block) {
         block.style.cursor = 'pointer'; 
