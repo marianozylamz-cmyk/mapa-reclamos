@@ -266,8 +266,47 @@ function clearPhotoEvidencia() {
 async function executeSubmitForm() {
     const randomSuffix = String(Date.now()).slice(-4);
     const claimId = `OLV-${new Date().getFullYear()}-${randomSuffix}`;
+    const msg = document.getElementById('formMessage');
+    
+    msg.style.display = 'block';
+    msg.style.background = '#fef08a';
+    msg.style.color = '#854d0e';
+    msg.textContent = `⌛ Procesando y geolocalizando dirección...`;
 
-    // 1. Armamos el objeto con toda la información del reclamo
+    let finalLat = OLAVARRIA_LAT;
+    let finalLng = OLAVARRIA_LNG;
+
+    // 1. Si el usuario usó el botón de GPS, usamos esas coordenadas exactas
+    if (state.currentLocation) {
+        finalLat = state.currentLocation.lat;
+        finalLng = state.currentLocation.lng;
+    } else {
+        // 2. Si escribió texto, usamos el buscador de OpenStreetMap acotado a Olavarría
+        const direccionEscrita = document.getElementById('claimAddress').value.trim();
+        if (direccionEscrita) {
+            try {
+                // Le sumamos ", Olavarria, Buenos Aires, Argentina" para que no busque la calle en otra provincia
+                const queryBusqueda = encodeURIComponent(`${direccionEscrita}, Olavarria, Buenos Aires, Argentina`);
+                const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${queryBusqueda}&limit=1`);
+                const data = await response.json();
+
+                if (data && data.length > 0) {
+                    finalLat = parseFloat(data[0].lat);
+                    finalLng = parseFloat(data[0].lon);
+                    console.log(`📍 Dirección encontrada por buscador: ${finalLat}, ${finalLng}`);
+                } else {
+                    console.warn("⚠️ No se encontró la altura exacta, usando ubicación aproximada.");
+                    // Si no encuentra la altura, al menos tira el pin cerca del centro sin el random loco anterior
+                    finalLat = OLAVARRIA_LAT + (Math.random() - 0.5) * 0.005;
+                    finalLng = OLAVARRIA_LNG + (Math.random() - 0.5) * 0.005;
+                }
+            } catch (err) {
+                console.error("Error en el servicio de geocodificación:", err);
+            }
+        }
+    }
+
+    // 3. Armamos el objeto final con las coordenadas de verdad
     const newClaimObject = {
         id: Date.now(),
         claimId,
@@ -277,31 +316,20 @@ async function executeSubmitForm() {
         urgency: state.selectedUrgency,
         address: document.getElementById('claimAddress').value.trim() || 'Ubicación Satelital GPS',
         description: document.getElementById('claimDescription').value.trim(),
-        lat: state.currentLocation?.lat || OLAVARRIA_LAT + (Math.random() - 0.5) * 0.01,
-        lng: state.currentLocation?.lng || OLAVARRIA_LNG + (Math.random() - 0.5) * 0.01,
+        lat: finalLat,
+        lng: finalLng,
         photo: state.currentPhoto,
-        status: 'pending', // Todos entran como pendientes para auditoría
+        status: 'pending',
         createdAt: new Date().toISOString()
     };
 
-    const msg = document.getElementById('formMessage');
-    msg.style.display = 'block';
-    msg.style.background = '#fef08a';
-    msg.style.color = '#854d0e';
-    msg.textContent = `⌛ Procesando y subiendo reporte a la nube...`;
-
     try {
-        // 2. Extraemos los métodos de Firebase guardados en window
         const { collection, addDoc } = window.dbMethods;
-
-        // 3. Subimos el objeto a la colección "reclamos" en Firestore
         const docRef = await addDoc(collection(window.db, "reclamos"), newClaimObject);
 
-        // 4. Guardamos el ID que nos dio Firebase en el objeto local antes de meterlo al estado
         newClaimObject._fbId = docRef.id;
         state.claims.push(newClaimObject);
 
-        // 5. Actualizamos la interfaz visual de forma normal
         renderPublicClaimsList();
         renderMapPins();
 
