@@ -210,7 +210,28 @@
         </div>
     </div>
 
+   <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+        import { getFirestore, collection, addDoc, getDocs, query, where, updateDoc, doc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBKgEWsTp99be6WRJddx3_WoUJROHKlxMU",
+            authDomain: "arreglame-esto-olavarria.firebaseapp.com",
+            projectId: "arreglame-esto-olavarria",
+            storageBucket: "arreglame-esto-olavarria.firebasestorage.app",
+            messagingSenderId: "767651525479",
+            appId: "1:767651525479:web:b4283e0d0521a3464a75c2"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        window.db = db;
+        window.dbMethods = { collection, addDoc, getDocs, query, where, updateDoc, doc };
+    </script>
+
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
     <script src="app.js"></script>
 </body>
 </html>

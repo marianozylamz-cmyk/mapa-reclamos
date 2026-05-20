@@ -31,9 +31,9 @@ const state = {
     activeCategoryFilter: 'all'
 };
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     checkAdminAccess();
-    loadStorageData();
+    await loadFirebaseData(); // 👈 Nueva función asíncrona
     initLeafletMap();
     setupApplicationEvents();
     renderPublicClaimsList();
@@ -263,10 +263,11 @@ function clearPhotoEvidencia() {
     document.getElementById('photoPreview').style.display = 'none';
 }
 
-function executeSubmitForm() {
+async function executeSubmitForm() {
     const randomSuffix = String(Date.now()).slice(-4);
     const claimId = `OLV-${new Date().getFullYear()}-${randomSuffix}`;
 
+    // 1. Armamos el objeto con toda la información del reclamo
     const newClaimObject = {
         id: Date.now(),
         claimId,
@@ -279,25 +280,46 @@ function executeSubmitForm() {
         lat: state.currentLocation?.lat || OLAVARRIA_LAT + (Math.random() - 0.5) * 0.01,
         lng: state.currentLocation?.lng || OLAVARRIA_LNG + (Math.random() - 0.5) * 0.01,
         photo: state.currentPhoto,
-        status: 'pending',
+        status: 'pending', // Todos entran como pendientes para auditoría
         createdAt: new Date().toISOString()
     };
 
-    state.claims.push(newClaimObject);
-    saveDataToStorage();
-    renderPublicClaimsList();
-    renderMapPins();
-
     const msg = document.getElementById('formMessage');
     msg.style.display = 'block';
-    msg.style.background = '#dcfce7';
-    msg.style.color = '#15803d';
-    msg.textContent = `✓ Reporte guardado con éxito. ID: ${claimId}`;
+    msg.style.background = '#fef08a';
+    msg.style.color = '#854d0e';
+    msg.textContent = `⌛ Procesando y subiendo reporte a la nube...`;
 
-    setTimeout(() => {
-        document.getElementById('claimModal').classList.add('hidden');
-        if (state.isAdmin) syncAdminDashboard();
-    }, 1600);
+    try {
+        // 2. Extraemos los métodos de Firebase guardados en window
+        const { collection, addDoc } = window.dbMethods;
+
+        // 3. Subimos el objeto a la colección "reclamos" en Firestore
+        const docRef = await addDoc(collection(window.db, "reclamos"), newClaimObject);
+
+        // 4. Guardamos el ID que nos dio Firebase en el objeto local antes de meterlo al estado
+        newClaimObject._fbId = docRef.id;
+        state.claims.push(newClaimObject);
+
+        // 5. Actualizamos la interfaz visual de forma normal
+        renderPublicClaimsList();
+        renderMapPins();
+
+        msg.style.background = '#dcfce7';
+        msg.style.color = '#15803d';
+        msg.textContent = `✓ Reporte guardado con éxito. ID: ${claimId}`;
+
+        setTimeout(() => {
+            document.getElementById('claimModal').classList.add('hidden');
+            if (state.isAdmin) syncAdminDashboard();
+        }, 1600);
+
+    } catch (error) {
+        console.error("❌ Error al guardar en Firebase:", error);
+        msg.style.background = '#fee2e2';
+        msg.style.color = '#dc2626';
+        msg.textContent = `❌ Error de conexión al guardar. Intente nuevamente.`;
+    }
 }
 
 function resetFormState() {
@@ -464,18 +486,34 @@ window.globalOpenDetailWindow = function(id) {
     document.getElementById('recentClaimsPopup').classList.add('hidden');
 };
 
-function dispatchStatus(id, newStatus) {
+async function dispatchStatus(id, newStatus) {
     const claim = state.claims.find(c => c.id === id);
-    if (claim) {
+    if (!claim) return;
+
+    try {
+        // 1. Extraemos los métodos de actualización de Firebase
+        const { doc, updateDoc } = window.dbMethods;
+
+        // 2. Apuntamos al documento exacto en Firebase usando su _fbId
+        const docRef = doc(window.db, "reclamos", claim._fbId);
+
+        // 3. Impactamos el nuevo estado en la nube
+        await updateDoc(docRef, { status: newStatus });
+
+        // 4. Si todo sale bien, actualizamos el estado local y la interfaz
         claim.status = newStatus;
-        saveDataToStorage();
+        
         renderPublicClaimsList();
         renderMapPins();
         if (state.isAdmin) syncAdminDashboard();
         document.getElementById('detailPanel').classList.remove('visible');
+        
+        console.log(`✓ Estado actualizado en Firebase a: ${newStatus}`);
+    } catch (error) {
+        console.error("❌ Error al actualizar el estado en Firebase:", error);
+        alert("No se pudo guardar el cambio en el servidor. Revisá tu conexión.");
     }
 }
-
 function renderPublicClaimsList() {
     let approved = state.claims.filter(c => c.status === 'approved');
     
@@ -569,6 +607,25 @@ function initPoliticalCounter() {
         });
     }
 }
-
-function saveDataToStorage() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state.claims)); }
-function loadStorageData() { const raw = localStorage.getItem(STORAGE_KEY); state.claims = raw ? JSON.parse(raw) : []; }
+async function loadFirebaseData() {
+    try {
+        // Traemos los métodos que exportamos desde el index.html
+        const { collection, getDocs } = window.dbMethods;
+        
+        // Hacemos la consulta a la colección "reclamos" en Firebase
+        const querySnapshot = await getDocs(collection(window.db, "reclamos"));
+        
+        const cargados = [];
+        querySnapshot.forEach((doc) => {
+            // Combinamos los datos del reclamo con su ID de Firebase
+            cargados.push({ _fbId: doc.id, ...doc.data() });
+        });
+        
+        // Guardamos todo en el estado de tu aplicación
+        state.claims = cargados;
+        console.log("🔥 Datos cargados con éxito desde Firebase:", state.claims.length);
+    } catch (error) {
+        console.error("❌ Error al cargar datos de Firebase:", error);
+        state.claims = [];
+    }
+}
