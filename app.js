@@ -533,6 +533,31 @@ function initPoliticalCounter() {
     };
     run();
     setInterval(run, 60000);
+
+    // TRUCO NUEVO: Doble clic en el contador para loguearse como Admin
+    const block = document.querySelector('.political-counter');
+    if (block) {
+        block.style.cursor = 'pointer'; 
+        block.addEventListener('dblclick', () => {
+            const intento = prompt('🔑 Ingrese la palabra clave de administración:');
+            if (intento === ADMIN_CODE) {
+                state.isAdmin = true;
+                
+                // 1. Mostramos la barra de sesión de Admin
+                document.getElementById('adminSessionBar').style.display = 'flex';
+                
+                // 2. Sincronizamos las estadísticas internas (Totales y Pendientes)
+                syncAdminDashboard(); 
+                
+                // 3. Actualizamos los pines del mapa (por si querés arrastrarlos)
+                renderMapPins(); 
+                
+                alert('🔓 Modo Auditor Activado correctamente.');
+            } else if (intento !== null) {
+                alert('❌ Clave incorrecta.');
+            }
+        });
+    }
 }
 
 function saveDataToStorage() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state.claims)); }
