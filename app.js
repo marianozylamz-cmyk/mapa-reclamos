@@ -1,7 +1,7 @@
 const OLAVARRIA_LAT = -36.8927;
 const OLAVARRIA_LNG = -60.3225;
 const STORAGE_KEY = 'reclamosData';
-const ADMIN_CODE = '12345';
+const ADMIN_CODE = 'varilla';
 
 const CATEGORIES = {
     vereda: { icon: '🧱', label: 'Vereda rota' },
