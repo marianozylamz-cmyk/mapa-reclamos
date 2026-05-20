@@ -487,8 +487,11 @@ html, body {
 }
 /* --- Contenedor de la Barra de Progreso del Gobierno --- */
 .political-counter {
+    background: transparent;   /* Usa el gris oscuro nativo del footer */
+    border: none;              /* Sin recuadros extras */
+    border-radius: 0;
+    padding: 14px 0;           /* Espaciado equilibrado */
     text-align: center;
-    padding: 10px 0;
 }
 
 .political-counter .counter-label {
@@ -501,8 +504,8 @@ html, body {
 }
 
 .political-counter .progress-container {
-    background: #1e293b;
-    border: 2px solid #eab308;
+    background: #1e293b;       /* Fondo interno de la barra desocupada */
+    border: 2px solid #eab308; /* Contorno amarillo estilo píldora */
     border-radius: 50px;
     height: 32px;
     overflow: hidden;
@@ -524,10 +527,10 @@ html, body {
     );
     background-size: 40px 40px;
     height: 100%;
-    width: 0%; /* Lo maneja el JS */
+    width: 0%;                 /* Lo maneja el JS de forma dinámica */
     border-radius: 50px;
     transition: width 0.5s ease-out;
-    animation: progress-bar-stripes 2s linear infinite;
+    /* ❌ Animación eliminada: las franjas ahora son fijas y normales */
 }
 
 .political-counter .counter-number {
@@ -536,10 +539,4 @@ html, body {
     font-weight: 600;
     color: #94a3b8;
     margin-top: 10px;
-}
-
-/* Animación para que las franjas se muevan */
-@keyframes progress-bar-stripes {
-    0% { background-position: 10px 0; }
-    100% { background-position: 50px 0; }
 }
