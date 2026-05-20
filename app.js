@@ -533,19 +533,14 @@ function initPoliticalCounter() {
     const run = () => {
         const now = new Date();
         
-        // 1. Calcular constantes de tiempo en milisegundos
         const totalDuration = targetDate - startDate;
         const timeElapsed = now - startDate;
         const timeRemaining = targetDate - now;
         
-        // 2. Pasar a formato días restantes para el texto inferior
         const daysRemaining = Math.max(0, Math.floor(timeRemaining / (1000 * 60 * 60 * 24)));
-
-        // 3. Obtener el porcentaje matemático exacto
         let percentComplete = (timeElapsed / totalDuration) * 100;
-        percentComplete = Math.min(100, Math.max(0, percentComplete)); // Asegurar que no desborde el 100%
+        percentComplete = Math.min(100, Math.max(0, percentComplete));
 
-        // 4. Actualizar la interfaz visual en tiempo real
         if (progressBar) {
             progressBar.style.width = `${percentComplete.toFixed(1)}%`;
         }
@@ -555,9 +550,8 @@ function initPoliticalCounter() {
     };
 
     run();
-    setInterval(run, 60000); // Se actualiza solo cada 1 minuto
+    setInterval(run, 60000);
 
-    // TRUCO DE ADMINISTRADOR: Doble clic en el recuadro para loguearse (Mantenido intacto)
     const block = document.querySelector('.political-counter');
     if (block) {
         block.style.cursor = 'pointer'; 
