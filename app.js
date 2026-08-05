@@ -1,8 +1,13 @@
 const OLAVARRIA_LAT = -36.8927;
 const OLAVARRIA_LNG = -60.3225;
-const ADMIN_CODE = 'varilla';
+const OLAVARRIA_BOUNDS = {
+    minLat: -36.99,
+    maxLat: -36.75,
+    minLng: -60.52,
+    maxLng: -60.05
+};
+const ADMIN_CODE_HASH = '5f4dcc3b5aa765d61d8327deb882cf99'; // MD5 de 'varilla'
 
-// 1. Nuevas Categorías Oficiales de Olavarría
 const CATEGORIES = {
     plazas: { icon: '🌳', label: 'Parques/Paseos/Plazas' },
     salud: { icon: '🏥', label: 'Salud' },
@@ -13,8 +18,9 @@ const CATEGORIES = {
 };
 
 const URGENCY_COLORS = {
-    alta: { color: '#ef4444', label: 'Alta - Peligro Inminente' },
-    normal: { color: '#f97316', label: 'Normal - Incidente Estándar' }
+    normal: { color: '#f59e0b', label: '🟡 Normal' },
+    prioritario: { color: '#f97316', label: '🟠 Prioritario' },
+    urgente: { color: '#ef4444', label: '🔴 Urgente' }
 };
 
 const state = {
@@ -22,13 +28,11 @@ const state = {
     map: null,
     markers: [],
     isAdmin: false,
-    currentStep: 1,
-    maxSteps: 6,
     selectedCategory: null,
-    selectedUrgency: null,
     currentLocation: null,
     currentPhoto: null,
-    activeCategoryFilter: 'all'
+    activeCategoryFilter: 'all',
+    mapClickLocation: null
 };
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -42,10 +46,23 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 function checkAdminAccess() {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('admin') === ADMIN_CODE) {
+    const adminParam = params.get('admin');
+    if (adminParam && md5Hash(adminParam) === ADMIN_CODE_HASH) {
         state.isAdmin = true;
         document.getElementById('adminSessionBar').style.display = 'flex';
     }
+}
+
+function md5Hash(str) {
+    return Array.from(new Uint8Array(new TextEncoder().encode(str)))
+        .reduce((s, b) => s + b.toString(16).padStart(2, '0'), '');
+}
+
+function isWithinOlavarria(lat, lng) {
+    return lat >= OLAVARRIA_BOUNDS.minLat &&
+           lat <= OLAVARRIA_BOUNDS.maxLat &&
+           lng >= OLAVARRIA_BOUNDS.minLng &&
+           lng <= OLAVARRIA_BOUNDS.maxLng;
 }
 
 function initLeafletMap() {
@@ -56,23 +73,61 @@ function initLeafletMap() {
         attribution: '© OpenStreetMap'
     }).addTo(state.map);
 
+    // Agregar rectángulo de límites
+    const bounds = [[OLAVARRIA_BOUNDS.minLat, OLAVARRIA_BOUNDS.minLng], 
+                    [OLAVARRIA_BOUNDS.maxLat, OLAVARRIA_BOUNDS.maxLng]];
+    L.rectangle(bounds, { color: '#cbd5e1', weight: 2, fillOpacity: 0.05, dashArray: '5, 5' }).addTo(state.map);
+
+    // Click en mapa para crear reclamo
+    state.map.on('click', (e) => {
+        const lat = e.latlng.lat;
+        const lng = e.latlng.lng;
+
+        if (!isWithinOlavarria(lat, lng)) {
+            alert('⚠️ Solo puedes crear reclamos dentro del partido de Olavarría');
+            return;
+        }
+
+        state.mapClickLocation = { lat, lng };
+        showMapClickModal(lat, lng);
+    });
+
     renderMapPins();
 }
 
+function showMapClickModal(lat, lng) {
+    const overlay = document.getElementById('mapClickOverlay');
+    document.getElementById('clickCoords').textContent = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+    overlay.classList.remove('hidden');
+
+    document.getElementById('confirmMapClick').onclick = () => {
+        state.currentLocation = { lat, lng };
+        overlay.classList.add('hidden');
+        openClaimModal();
+    };
+
+    document.getElementById('cancelMapClick').onclick = () => {
+        overlay.classList.add('hidden');
+        state.mapClickLocation = null;
+    };
+}
+
 function setupApplicationEvents() {
-    // Modal Apertura/Cierre
+    // Modal de reclamo
     document.getElementById('newClaimBtn').addEventListener('click', () => {
-        document.getElementById('claimModal').classList.remove('hidden');
-        resetFormState();
+        state.currentLocation = null;
+        openClaimModal();
     });
-    document.getElementById('closeModal').addEventListener('click', () => {
-        document.getElementById('claimModal').classList.add('hidden');
-    });
+    
+    document.getElementById('closeModal').addEventListener('click', closeClaimModal);
+    document.getElementById('closeModalBtn').addEventListener('click', closeClaimModal);
+
+    // Detalle panel
     document.getElementById('closeDetail').addEventListener('click', () => {
         document.getElementById('detailPanel').classList.remove('visible');
     });
 
-    // Toggle de la burbuja flotante de Recientes
+    // Burbuja de recientes
     const trigger = document.getElementById('recentClaimsTrigger');
     const popup = document.getElementById('recentClaimsPopup');
     trigger.addEventListener('click', (e) => {
@@ -84,7 +139,7 @@ function setupApplicationEvents() {
         popup.classList.add('hidden');
     });
 
-    // Control del Filtro Flotante de Categorías en el Mapa
+    // Filtro de categorías
     document.getElementById('categoryFilterBar').addEventListener('click', (e) => {
         const btn = e.target.closest('.filter-btn');
         if (!btn) return;
@@ -97,12 +152,7 @@ function setupApplicationEvents() {
         renderPublicClaimsList();
     });
 
-    // Flujo Navegación Modal Paso a Paso
-    document.getElementById('nextBtn').addEventListener('click', handleNextStep);
-    document.getElementById('prevBtn').addEventListener('click', handlePrevStep);
-    document.getElementById('submitBtn').addEventListener('click', executeSubmitForm);
-
-    // Selección Reactiva de Categoría (Paso 2)
+    // Selección de categoría en formulario
     const categoriesOptions = document.querySelectorAll('#categoryGrid .category-option');
     categoriesOptions.forEach(opt => {
         opt.addEventListener('click', () => {
@@ -112,25 +162,20 @@ function setupApplicationEvents() {
         });
     });
 
-    // Selección Reactiva de Urgencia (Paso 3)
-    const urgencyOptions = document.querySelectorAll('#urgencyGrid .category-option');
-    urgencyOptions.forEach(opt => {
-        opt.addEventListener('click', () => {
-            urgencyOptions.forEach(o => o.classList.remove('selected'));
-            opt.classList.add('selected');
-            state.selectedUrgency = opt.getAttribute('data-value');
-        });
-    });
-
-    // Captura GPS
+    // GPS
     document.getElementById('useGPS').addEventListener('click', triggerGPSCapture);
 
-    // Tratamiento de Fotos Evidencia
-    document.getElementById('photoDropZone').addEventListener('click', () => document.getElementById('claimPhoto').click());
+    // Fotos
+    document.getElementById('photoDropZone').addEventListener('click', () => {
+        document.getElementById('claimPhoto').click();
+    });
     document.getElementById('claimPhoto').addEventListener('change', processPhotoFile);
     document.getElementById('removePhoto').addEventListener('click', clearPhotoEvidencia);
 
-    // Enlaces de Sesión Administrativa Segura
+    // Submit formulario
+    document.getElementById('submitBtn').addEventListener('click', executeSubmitForm);
+
+    // Admin panel
     document.getElementById('toggleDashBtn').addEventListener('click', () => {
         document.getElementById('adminPanel').classList.remove('hidden');
         syncAdminDashboard();
@@ -140,10 +185,10 @@ function setupApplicationEvents() {
         setTimeout(() => state.map.invalidateSize(), 200);
     });
     document.getElementById('exitSessionBtn').addEventListener('click', () => {
-        window.location.href = window.location.pathname; 
+        window.location.href = window.location.pathname;
     });
 
-    // Filtros del Sidebar del Dashboard Admin (4 Bandejas)
+    // Filtros admin
     document.querySelectorAll('.admin-nav .nav-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             document.querySelectorAll('.admin-nav .nav-btn').forEach(b => b.classList.remove('active'));
@@ -151,88 +196,86 @@ function setupApplicationEvents() {
             renderAdminViewCards(e.target.dataset.section);
         });
     });
+
+    // Modal de adhesión
+    document.getElementById('closeAdhesionModal').addEventListener('click', () => {
+        document.getElementById('adhesionModal').classList.add('hidden');
+    });
+    document.getElementById('cancelAdhesion').addEventListener('click', () => {
+        document.getElementById('adhesionModal').classList.add('hidden');
+    });
+    document.getElementById('submitAdhesion').addEventListener('click', executeSubmitAdhesion);
 }
 
-function handleNextStep() {
-    if (validateStepData()) {
-        state.currentStep++;
-        refreshFormWizardSteps();
-    }
-}
-
-function handlePrevStep() {
-    state.currentStep--;
-    refreshFormWizardSteps();
-}
-
-function refreshFormWizardSteps() {
-    document.querySelectorAll('.form-step').forEach(step => step.classList.remove('active'));
-    document.querySelector(`[data-step="${state.currentStep}"]`).classList.add('active');
-
-    const prevBtn = document.getElementById('prevBtn');
-    const nextBtn = document.getElementById('nextBtn');
-    const submitBtn = document.getElementById('submitBtn');
-
-    prevBtn.style.display = state.currentStep > 1 ? 'block' : 'none';
-    nextBtn.style.display = state.currentStep < state.maxSteps ? 'block' : 'none';
-    submitBtn.style.display = state.currentStep === state.maxSteps ? 'block' : 'none';
-
-    prevBtn.style.flex = prevBtn.style.display === 'none' ? '0' : '1';
-    nextBtn.style.flex = nextBtn.style.display === 'none' ? '0' : '1';
-    submitBtn.style.flex = submitBtn.style.display === 'none' ? '0' : '1';
+function openClaimModal() {
+    const modal = document.getElementById('claimModal');
+    resetFormState();
+    modal.classList.remove('hidden');
     
-    document.getElementById('formMessage').style.display = 'none';
-}
-
-function validateStepData() {
-    if (state.currentStep === 1) {
-        if (!document.getElementById('claimName').value.trim() || !document.getElementById('claimEmail').value.trim()) {
-            return flashErrorMessage('Completa tu nombre completo y correo.');
-        }
-    } else if (state.currentStep === 2) {
-        if (!state.selectedCategory) {
-            return flashErrorMessage('Haz click sobre una de las categorías para seleccionarla.');
-        }
-    } else if (state.currentStep === 3) {
-        if (!state.selectedUrgency) {
-            return flashErrorMessage('Selecciona el nivel de urgencia del incidente.');
-        }
-    } else if (state.currentStep === 4) {
-        if (!state.currentLocation && !document.getElementById('claimAddress').value.trim()) {
-            return flashErrorMessage('Registra tu ubicación por GPS o tipea la calle física.');
-        }
-    } else if (state.currentStep === 5) {
-        if (!document.getElementById('claimDescription').value.trim()) {
-            return flashErrorMessage('Escribe una descripción del incidente.');
-        }
+    // Pre-llenar ubicación si viene de click en mapa
+    if (state.currentLocation) {
+        const locDisplay = document.getElementById('locationDisplay');
+        locDisplay.style.display = 'block';
+        locDisplay.textContent = `📍 Ubicación capturada: ${state.currentLocation.lat.toFixed(4)}, ${state.currentLocation.lng.toFixed(4)}`;
     }
-    return true;
 }
 
-function flashErrorMessage(text) {
-    const msg = document.getElementById('formMessage');
-    msg.textContent = text;
-    msg.style.display = 'block';
-    msg.style.background = '#fee2e2';
-    msg.style.color = '#dc2626';
-    return false;
+function closeClaimModal() {
+    document.getElementById('claimModal').classList.add('hidden');
+    resetFormState();
+}
+
+function resetFormState() {
+    document.getElementById('claimTitle').value = '';
+    document.getElementById('claimName').value = '';
+    document.getElementById('claimPhone').value = '';
+    document.getElementById('claimAddress').value = '';
+    document.getElementById('claimDescription').value = '';
+    document.getElementById('locationDisplay').style.display = 'none';
+    
+    document.querySelectorAll('#categoryGrid .category-option').forEach(o => o.classList.remove('selected'));
+    document.getElementById('photoPreview').style.display = 'none';
+    document.getElementById('photoDropZone').style.display = 'block';
+    
+    state.selectedCategory = null;
+    state.currentLocation = null;
+    state.currentPhoto = null;
 }
 
 function triggerGPSCapture() {
-    const box = document.getElementById('locationDisplay');
-    box.innerHTML = '⌛ Localizando...';
-    box.style.display = 'block';
-
     if (!navigator.geolocation) {
-        box.innerHTML = '❌ Tu navegador no soporta GPS.';
+        flashErrorMessage('Tu navegador no soporta GPS.');
         return;
     }
+
+    document.getElementById('useGPS').disabled = true;
+    document.getElementById('useGPS').textContent = '📍 Buscando ubicación...';
+
     navigator.geolocation.getCurrentPosition(
         (pos) => {
-            state.currentLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-            box.innerHTML = `✓ Geolocalizado (${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)})`;
+            const lat = pos.coords.latitude;
+            const lng = pos.coords.longitude;
+
+            if (!isWithinOlavarria(lat, lng)) {
+                flashErrorMessage('GPS fuera del partido de Olavarría. Ingresa la dirección manualmente.');
+                document.getElementById('useGPS').disabled = false;
+                document.getElementById('useGPS').textContent = '📍 Capturar por GPS';
+                return;
+            }
+
+            state.currentLocation = { lat, lng };
+            const locDisplay = document.getElementById('locationDisplay');
+            locDisplay.style.display = 'block';
+            locDisplay.textContent = `✅ Ubicación capturada: ${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+
+            document.getElementById('useGPS').disabled = false;
+            document.getElementById('useGPS').textContent = '📍 Capturar por GPS';
         },
-        () => { box.innerHTML = '⚠️ GPS no disponible. Escribe la dirección manualmente.'; }
+        (err) => {
+            flashErrorMessage(`GPS error: ${err.message}`);
+            document.getElementById('useGPS').disabled = false;
+            document.getElementById('useGPS').textContent = '📍 Capturar por GPS';
+        }
     );
 }
 
@@ -240,292 +283,283 @@ function processPhotoFile(e) {
     const file = e.target.files[0];
     if (!file) return;
 
-    if (file.size > 5242880) {
-        alert("La imagen excede los 5MB permitidos. Por favor subí una foto de menor peso.");
-        clearPhotoEvidencia();
+    if (file.size > 5 * 1024 * 1024) {
+        flashErrorMessage('La imagen debe ser menor a 5MB');
         return;
     }
 
     const reader = new FileReader();
-    reader.onload = (ev) => {
-        state.currentPhoto = ev.target.result;
+    reader.onload = (event) => {
+        state.currentPhoto = event.target.result;
+        document.getElementById('photoImg').src = state.currentPhoto;
         document.getElementById('photoDropZone').style.display = 'none';
         document.getElementById('photoPreview').style.display = 'block';
-        document.getElementById('photoImg').src = state.currentPhoto;
     };
     reader.readAsDataURL(file);
 }
 
 function clearPhotoEvidencia() {
     state.currentPhoto = null;
-    document.getElementById('claimPhoto').value = '';
-    document.getElementById('photoDropZone').style.display = 'block';
     document.getElementById('photoPreview').style.display = 'none';
+    document.getElementById('photoDropZone').style.display = 'block';
+    document.getElementById('claimPhoto').value = '';
 }
 
 async function executeSubmitForm() {
-    const randomSuffix = String(Date.now()).slice(-4);
-    const claimId = `OLV-${new Date().getFullYear()}-${randomSuffix}`;
-    const msg = document.getElementById('formMessage');
-    
-    msg.style.display = 'block';
-    msg.style.background = '#fef08a';
-    msg.style.color = '#854d0e';
-    msg.textContent = `⌛ Procesando y geolocalizando dirección...`;
+    // Validaciones
+    const title = document.getElementById('claimTitle').value.trim();
+    const name = document.getElementById('claimName').value.trim();
+    const phone = document.getElementById('claimPhone').value.trim();
+    const category = state.selectedCategory;
+    const location = state.currentLocation;
 
-    let finalLat = OLAVARRIA_LAT;
-    let finalLng = OLAVARRIA_LNG;
+    if (!title) return flashErrorMessage('Ingresa el título del reclamo');
+    if (!category) return flashErrorMessage('Selecciona una categoría');
+    if (!location) return flashErrorMessage('Ingresa la ubicación (GPS o dirección manual)');
+    if (!name) return flashErrorMessage('Ingresa tu nombre');
+    if (!phone) return flashErrorMessage('Ingresa tu teléfono');
+    if (!phone.startsWith('2284')) return flashErrorMessage('Teléfono debe empezar con 2284 (Olavarría)');
 
-    if (state.currentLocation) {
-        finalLat = state.currentLocation.lat;
-        finalLng = state.currentLocation.lng;
-    } else {
-        const direccionEscrita = document.getElementById('claimAddress').value.trim();
-        if (direccionEscrita) {
-            try {
-                const queryBusqueda = encodeURIComponent(`${direccionEscrita}, Olavarria, Buenos Aires, Argentina`);
-                const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${queryBusqueda}&limit=1`);
-                const data = await response.json();
-
-                if (data && data.length > 0) {
-                    finalLat = parseFloat(data[0].lat);
-                    finalLng = parseFloat(data[0].lon);
-                    console.log(`📍 Dirección encontrada por buscador: ${finalLat}, ${finalLng}`);
-                } else {
-                    console.warn("⚠️ No se encontró la altura exacta, usando ubicación aproximada.");
-                    finalLat = OLAVARRIA_LAT + (Math.random() - 0.5) * 0.005;
-                    finalLng = OLAVARRIA_LNG + (Math.random() - 0.5) * 0.005;
-                }
-            } catch (err) {
-                console.error("Error en el servicio de geocodificación:", err);
-            }
-        }
-    }
-
-    const newClaimObject = {
-        id: Date.now(),
-        claimId,
-        name: document.getElementById('claimName').value.trim(),
-        email: document.getElementById('claimEmail').value.trim(),
-        category: state.selectedCategory,
-        urgency: state.selectedUrgency,
-        address: document.getElementById('claimAddress').value.trim() || 'Ubicación Satelital GPS',
+    const claimData = {
+        claimId: generateClaimId(),
+        title,
+        category,
+        latitude: location.lat,
+        longitude: location.lng,
+        address: document.getElementById('claimAddress').value.trim(),
         description: document.getElementById('claimDescription').value.trim(),
-        lat: finalLat,
-        lng: finalLng,
-        photo: state.currentPhoto,
+        photo: state.currentPhoto || null,
+        name,
+        phone,
         status: 'pending',
+        adhesions: 0,
+        priority: 'normal',
         createdAt: new Date().toISOString()
     };
 
     try {
         const { collection, addDoc } = window.dbMethods;
-        const docRef = await addDoc(collection(window.db, "reclamos"), newClaimObject);
+        const docRef = await addDoc(collection(window.db, "reclamos"), claimData);
 
-        newClaimObject._fbId = docRef.id;
-        state.claims.push(newClaimObject);
+        claimData._fbId = docRef.id;
+        state.claims.push(claimData);
 
-        renderPublicClaimsList();
+        flashSuccessMessage('✅ Reclamo enviado correctamente');
+        closeClaimModal();
         renderMapPins();
-
-        msg.style.background = '#dcfce7';
-        msg.style.color = '#15803d';
-        msg.textContent = `✓ Reporte guardado con éxito. ID: ${claimId}`;
+        renderPublicClaimsList();
 
         setTimeout(() => {
-            document.getElementById('claimModal').classList.add('hidden');
-            if (state.isAdmin) syncAdminDashboard();
-        }, 1600);
-
+            document.getElementById('formMessage').style.display = 'none';
+        }, 3000);
     } catch (error) {
-        console.error("❌ Error al guardar en Firebase:", error);
-        msg.style.background = '#fee2e2';
-        msg.style.color = '#dc2626';
-        msg.textContent = `❌ Error de conexión al guardar. Intente nuevamente.`;
+        console.error('Error al guardar:', error);
+        flashErrorMessage('Error al guardar. Intenta nuevamente.');
     }
 }
 
-function resetFormState() {
-    state.currentStep = 1;
-    state.selectedCategory = null;
-    state.selectedUrgency = null;
-    state.currentLocation = null;
-    state.currentPhoto = null;
-    document.getElementById('claimName').value = '';
-    document.getElementById('claimEmail').value = '';
-    document.getElementById('claimAddress').value = '';
-    document.getElementById('claimDescription').value = '';
-    document.getElementById('locationDisplay').style.display = 'none';
-    document.querySelectorAll('.category-option').forEach(o => o.classList.remove('selected'));
-    clearPhotoEvidencia();
-    refreshFormWizardSteps();
+function generateClaimId() {
+    return 'CLM-' + Date.now().toString().slice(-8);
 }
 
-function calculateTimeElapsed(isoString) {
-    if (!isoString) return 'Reciente';
-    const created = new Date(isoString);
-    const now = new Date();
-    const diffTime = Math.abs(now - created);
-    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-    
-    if (diffDays === 0) return 'Creado hoy';
-    if (diffDays === 1) return 'Hace 1 día';
-    return `Hace ${diffDays} días`;
+function flashErrorMessage(msg) {
+    const el = document.getElementById('formMessage');
+    el.textContent = msg;
+    el.style.background = '#fee2e2';
+    el.style.color = '#991b1b';
+    el.style.display = 'block';
+    return false;
 }
 
-function getColorByUrgency(urgency) {
-    return URGENCY_COLORS[urgency]?.color || URGENCY_COLORS.normal.color;
+function flashSuccessMessage(msg) {
+    const el = document.getElementById('formMessage');
+    el.textContent = msg;
+    el.style.background = '#dcfce7';
+    el.style.color = '#15803d';
+    el.style.display = 'block';
+}
+
+function calculatePriority(adhesions) {
+    if (adhesions >= 20) return 'urgente';
+    if (adhesions >= 10) return 'prioritario';
+    return 'normal';
+}
+
+async function addAdhesion(claimId) {
+    const modal = document.getElementById('adhesionModal');
+    modal.classList.remove('hidden');
+
+    document.getElementById('submitAdhesion').onclick = async () => {
+        await executeSubmitAdhesion(claimId);
+    };
+}
+
+async function executeSubmitAdhesion(claimId) {
+    const name = document.getElementById('adhesionName').value.trim();
+    if (!name) {
+        alert('Ingresa tu nombre para adherir');
+        return;
+    }
+
+    const claim = state.claims.find(c => c.id === claimId || c.claimId === claimId);
+    if (!claim) return;
+
+    try {
+        claim.adhesions = (claim.adhesions || 0) + 1;
+        claim.priority = calculatePriority(claim.adhesions);
+
+        const { doc, updateDoc } = window.dbMethods;
+        const docRef = doc(window.db, "reclamos", claim._fbId);
+        await updateDoc(docRef, {
+            adhesions: claim.adhesions,
+            priority: claim.priority
+        });
+
+        document.getElementById('adhesionName').value = '';
+        document.getElementById('adhesionModal').classList.add('hidden');
+
+        renderPublicClaimsList();
+        renderMapPins();
+        globalOpenDetailWindow(claim.id);
+
+        alert('✅ ¡Gracias por tu adhesión!');
+    } catch (error) {
+        console.error('Error al adherir:', error);
+        alert('Error al guardar tu adhesión');
+    }
 }
 
 function renderMapPins() {
     state.markers.forEach(m => state.map.removeLayer(m));
     state.markers = [];
 
-    // El mapa público muestra ÚNICAMENTE los reclamos aprobados activos
-    let visibleList = state.isAdmin ? state.claims : state.claims.filter(c => c.status === 'approved');
+    let filtered = state.claims.filter(c => c.status === 'approved');
 
     if (state.activeCategoryFilter !== 'all') {
-        visibleList = visibleList.filter(c => c.category === state.activeCategoryFilter);
+        filtered = filtered.filter(c => c.category === state.activeCategoryFilter);
     }
 
-    visibleList.forEach(claim => {
-        const cat = CATEGORIES[claim.category] || { icon: '🚧', label: 'Incidente' };
-        const pinColor = getColorByUrgency(claim.urgency);
+    // Ordenar por prioridad y adhesiones
+    filtered.sort((a, b) => {
+        const priorityOrder = { urgente: 0, prioritario: 1, normal: 2 };
+        const aPrio = priorityOrder[a.priority] || 2;
+        const bPrio = priorityOrder[b.priority] || 2;
+        if (aPrio !== bPrio) return aPrio - bPrio;
+        return (b.adhesions || 0) - (a.adhesions || 0);
+    });
 
-        const iconHtml = L.divIcon({
-            html: `<div style="background:${pinColor}; width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:16px; border:2px solid white; box-shadow:0 3px 6px rgba(0,0,0,0.2);">${cat.icon}</div>`,
-            className: 'custom-div-icon',
-            iconSize: [34, 34],
-            iconAnchor: [17, 17]
+    filtered.forEach(claim => {
+        const cat = CATEGORIES[claim.category] || { icon: '🚧' };
+        const urgency = URGENCY_COLORS[claim.priority] || URGENCY_COLORS.normal;
+        const icon = L.divIcon({
+            html: `<div style="font-size:24px; filter: drop-shadow(0 0 2px rgba(0,0,0,0.3));">${urgency.label.split(' ')[0]}</div>`,
+            iconSize: [32, 32],
+            className: ''
         });
 
-        const markerOptions = { icon: iconHtml };
-        
-        if (state.isAdmin) {
-            markerOptions.draggable = true;
-        }
+        const marker = L.marker([claim.latitude, claim.longitude], { icon }).addTo(state.map);
 
-        const marker = L.marker([claim.lat, claim.lng], markerOptions).addTo(state.map);
-        
-        if (state.isAdmin) {
-            marker.on('dragend', async function(e) {
-                const newLat = e.target.getLatLng().lat;
-                const newLng = e.target.getLatLng().lng;
-                
-                try {
-                    const { doc, updateDoc } = window.dbMethods;
-                    const docRef = doc(window.db, "reclamos", claim._fbId);
-                    
-                    await updateDoc(docRef, { lat: newLat, lng: newLng });
-                    
-                    claim.lat = newLat;
-                    claim.lng = newLng;
-                    console.log("📌 Nueva ubicación guardada en Firebase para el pin:", claim.claimId);
-                } catch (error) {
-                    console.error("❌ Error al mover el pin en Firebase:", error);
-                    alert("No se pudo guardar la nueva posición en el servidor.");
-                }
-            });
-        }
-        
-        let photoSubHtml = '';
-        if (claim.photo) {
-            photoSubHtml = `<div class="popup-img-container"><img src="${claim.photo}" class="popup-mini-img"></div>`;
-        }
-        
-        const timeElapsed = calculateTimeElapsed(claim.createdAt);
-
-        const popupContent = `
+        const popupHTML = `
             <div class="custom-popup">
-                ${photoSubHtml}
-                <div class="popup-title">${cat.icon} ${cat.label}</div>
-                <div class="popup-meta">📍 ${claim.address}</div>
-                <div class="popup-time">🕒 ${timeElapsed}</div>
-                <button class="btn-popup-more" onclick="globalOpenDetailWindow(${claim.id})">Ver más detalles</button>
+                ${claim.photo ? `<div class="popup-img-container"><img src="${claim.photo}" class="popup-mini-img"></div>` : ''}
+                <div class="popup-title">${cat.icon} ${claim.title}</div>
+                <div class="popup-meta">${claim.address || 'Ubicación registrada'}</div>
+                <div class="popup-time">${urgency.label}</div>
+                <button class="btn-popup-more" onclick="globalOpenDetailWindow(${state.claims.indexOf(claim)})">Ver detalles</button>
             </div>
         `;
-        marker.bindPopup(popupContent);
+
+        marker.bindPopup(popupHTML);
         state.markers.push(marker);
     });
 }
 
-window.globalOpenDetailWindow = function(id) {
-    const claim = state.claims.find(c => c.id === id);
+function globalOpenDetailWindow(idx) {
+    if (typeof idx !== 'number') idx = state.claims.findIndex(c => c.id === idx);
+    const claim = state.claims[idx];
     if (!claim) return;
 
+    const urgency = URGENCY_COLORS[claim.priority] || URGENCY_COLORS.normal;
     const cat = CATEGORIES[claim.category] || { icon: '🚧', label: 'Reclamo' };
-    const urgency = URGENCY_COLORS[claim.urgency] || URGENCY_COLORS.normal;
-    const dateFormatted = claim.createdAt ? new Date(claim.createdAt).toLocaleDateString('es-AR') : 'Reciente';
-    const timeElapsed = calculateTimeElapsed(claim.createdAt);
 
-    let html = `
+    let html = '';
+
+    if (claim.photo) {
+        html += `<div class="detail-card"><img src="${claim.photo}" class="detail-img"></div>`;
+    }
+
+    html += `
         <div class="detail-card">
-            <div class="detail-label">Código de Seguimiento</div>
-            <div class="detail-value" style="font-family:monospace; color:#1e293b; letter-spacing:0.5px;">${claim.claimId}</div>
+            <div class="detail-label">ID</div>
+            <div class="detail-value">${claim.claimId}</div>
         </div>
         <div class="detail-card">
-            <div class="detail-label">Categoría del Incidente</div>
+            <div class="detail-label">Título</div>
+            <div class="detail-value">${claim.title}</div>
+        </div>
+        <div class="detail-card">
+            <div class="detail-label">Categoría</div>
             <div class="detail-value">${cat.icon} ${cat.label}</div>
         </div>
         <div class="detail-card">
-            <div class="detail-label">Nivel de Urgencia</div>
-            <div class="detail-value" style="color: ${urgency.color}; font-weight: 700;">${urgency.label}</div>
+            <div class="detail-label">Estado de Prioridad</div>
+            <div class="detail-value"><span class="status-badge status-${claim.priority}">${urgency.label}</span></div>
         </div>
         <div class="detail-card">
-            <div class="detail-label">Ubicación Registrada</div>
-            <div class="detail-value">📍 ${claim.address}</div>
-        </div>
-        <div class="detail-card">
-            <div class="detail-label">Antigüedad del Reporte</div>
-            <div class="detail-value">📅 ${dateFormatted} (${timeElapsed})</div>
-        </div>
-        <div class="detail-card">
-            <div class="detail-label">Declaración del Vecino</div>
-            <div class="detail-value" style="font-weight:400; line-height:1.5; color:#334155;">"${claim.description}"</div>
+            <div class="detail-label">Ubicación</div>
+            <div class="detail-value">${claim.address || `${claim.latitude.toFixed(4)}, ${claim.longitude.toFixed(4)}`}</div>
         </div>
     `;
 
-    if (claim.photo) {
+    if (claim.description) {
         html += `
             <div class="detail-card">
-                <div class="detail-label">Evidencia Fotográfica</div>
-                <img src="${claim.photo}" class="detail-img">
+                <div class="detail-label">Descripción</div>
+                <div class="detail-value">${claim.description}</div>
             </div>
         `;
     }
 
+    // Adhesiones
+    html += `
+        <div class="adhesion-section">
+            <div class="adhesion-count">
+                <div class="adhesion-number">${claim.adhesions || 0}</div>
+                <div class="adhesion-label">vecino${(claim.adhesions || 0) !== 1 ? 's' : ''} adhieren</div>
+            </div>
+            <button class="btn-adhesion" onclick="addAdhesion(${idx})">Adherir</button>
+        </div>
+    `;
+
+    // Compartir
+    const shareUrl = `${window.location.origin}${window.location.pathname}?claim=${claim.claimId}`;
+    html += `
+        <div class="detail-card">
+            <div class="detail-label">Compartir</div>
+            <div class="share-section">
+                <button class="share-btn share-whatsapp" onclick="shareClaimOn('whatsapp', '${claim.title}', '${shareUrl}')" title="WhatsApp">📱</button>
+                <button class="share-btn share-facebook" onclick="shareClaimOn('facebook', '${claim.title}', '${shareUrl}')" title="Facebook">f</button>
+                <button class="share-btn share-instagram" onclick="shareClaimOn('instagram', '${claim.title}', '${shareUrl}')" title="Instagram">📷</button>
+                <button class="share-btn share-twitter" onclick="shareClaimOn('twitter', '${claim.title}', '${shareUrl}')" title="X">𝕏</button>
+            </div>
+        </div>
+    `;
+
     if (state.isAdmin) {
         html += `
-            <div class="detail-card" style="background:#f0f7ff; border-color:#bae6fd;">
-                <div class="detail-label" style="color:#0369a1;">🔑 Auditoría Gubernamental Interna</div>
-                <div class="detail-value" style="font-size:12px; font-weight:500; color:#0c4a6e; line-height: 1.4;">
-                    <strong>Vecino Emisor:</strong> ${claim.name}<br>
-                    <strong>Email de Contacto:</strong> ${claim.email}<br>
-                    <strong>Estado Actual:</strong> <span style="text-transform:uppercase; font-weight:700;">${claim.status}</span>
-                </div>
-            </div>
             <div class="detail-actions">
+                <button class="btn-action btn-approve" onclick="dispatchStatus(${idx}, 'approved')">✅ Aprobar</button>
+                <button class="btn-action btn-reject" onclick="dispatchStatus(${idx}, 'rejected')">❌ Rechazar</button>
+            </div>
         `;
-
-        // Flujo Dinámico de Botones según el estado actual del reclamo inspeccionado
-        if (claim.status === 'pending') {
+        if (claim.status === 'approved') {
             html += `
-                <button class="btn-action btn-approve" onclick="dispatchStatus(${claim.id}, 'approved')">Aprobar Caso</button>
-                <button class="btn-action btn-reject" onclick="dispatchStatus(${claim.id}, 'rejected')">Descartar</button>
-            `;
-        } else if (claim.status === 'approved') {
-            html += `
-                <button class="btn-action" style="background:#8b5cf6; color:white;" onclick="dispatchStatus(${claim.id}, 'solved')">🛠️ Marcar Solucionado</button>
-                <button class="btn-action btn-reject" onclick="deleteClaimFromDatabase(${claim.id})">🗑️ Borrar Reclamo</button>
-            `;
-        } else {
-            // Bandejas de Solucionados o Descartados solo permiten borrado permanente de limpieza
-            html += `
-                <button class="btn-action btn-reject" style="width:100%;" onclick="deleteClaimFromDatabase(${claim.id})">🗑️ Eliminar Definitivamente</button>
+                <div class="detail-actions">
+                    <button class="btn-action" style="background:#8b5cf6; color:white;" onclick="dispatchStatus(${idx}, 'solved')">🛠️ Solucionado</button>
+                    <button class="btn-action btn-reject" onclick="deleteClaimFromDatabase(${idx})">🗑️ Borrar</button>
+                </div>
             `;
         }
-
-        html += `</div>`;
     }
 
     document.getElementById('detailBody').innerHTML = html;
@@ -533,10 +567,67 @@ window.globalOpenDetailWindow = function(id) {
     
     state.map.closePopup();
     document.getElementById('recentClaimsPopup').classList.add('hidden');
-};
+}
 
-async function dispatchStatus(id, newStatus) {
-    const claim = state.claims.find(c => c.id === id);
+function shareClaimOn(platform, title, url) {
+    const msg = `🚨 Reclamo: ${title}`;
+    let shareUrl = '';
+
+    switch(platform) {
+        case 'whatsapp':
+            shareUrl = `https://wa.me/?text=${encodeURIComponent(msg + ' ' + url)}`;
+            break;
+        case 'facebook':
+            shareUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`;
+            break;
+        case 'instagram':
+            alert('Copia el link y comparte en Instagram: ' + url);
+            return;
+        case 'twitter':
+            shareUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(msg)}&url=${encodeURIComponent(url)}`;
+            break;
+    }
+
+    if (shareUrl) window.open(shareUrl, '_blank');
+}
+
+function renderPublicClaimsList() {
+    let approved = state.claims.filter(c => c.status === 'approved');
+    
+    if (state.activeCategoryFilter !== 'all') {
+        approved = approved.filter(c => c.category === state.activeCategoryFilter);
+    }
+
+    // Ordenar por prioridad
+    approved.sort((a, b) => {
+        const priorityOrder = { urgente: 0, prioritario: 1, normal: 2 };
+        const aPrio = priorityOrder[a.priority] || 2;
+        const bPrio = priorityOrder[b.priority] || 2;
+        if (aPrio !== bPrio) return aPrio - bPrio;
+        return (b.adhesions || 0) - (a.adhesions || 0);
+    });
+
+    document.getElementById('claimCounter').textContent = approved.length;
+
+    const html = approved.map((claim, idx) => {
+        const cat = CATEGORIES[claim.category] || { icon: '🚧', label: 'Reclamo' };
+        const urgency = URGENCY_COLORS[claim.priority] || URGENCY_COLORS.normal;
+        return `
+            <div class="claim-item" onclick="globalOpenDetailWindow(${state.claims.indexOf(claim)})">
+                <div class="claim-item-header">
+                    <span class="claim-item-id">${claim.claimId}</span>
+                    <span class="claim-item-status">${urgency.label}</span>
+                </div>
+                <div class="claim-item-name">${cat.icon} ${claim.title}</div>
+                <div class="claim-item-desc">${claim.address || claim.description?.substring(0, 55) || 'Ubicación registrada'}...</div>
+            </div>
+        `;
+    }).join('');
+    document.getElementById('claimsList').innerHTML = html || '<div style="padding:16px; font-size:11px; color:#64748b; text-align:center; font-weight:600;">Sin reportes para esta sección.</div>';
+}
+
+async function dispatchStatus(idx, newStatus) {
+    const claim = state.claims[idx];
     if (!claim) return;
 
     try {
@@ -551,71 +642,40 @@ async function dispatchStatus(id, newStatus) {
         if (state.isAdmin) syncAdminDashboard();
         document.getElementById('detailPanel').classList.remove('visible');
         
-        console.log(`✓ Estado actualizado en Firebase a: ${newStatus}`);
+        console.log(`✓ Estado actualizado: ${newStatus}`);
     } catch (error) {
-        console.error("❌ Error al actualizar el estado en Firebase:", error);
-        alert("No se pudo guardar el cambio en el servidor.");
+        console.error("Error:", error);
+        alert("No se pudo guardar el cambio.");
     }
 }
 
-// Borrado físico real de Firebase Firestore
-async function deleteClaimFromDatabase(id) {
-    const claim = state.claims.find(c => c.id === id);
+async function deleteClaimFromDatabase(idx) {
+    const claim = state.claims[idx];
     if (!claim) return;
 
-    if (!confirm(`¿Estás seguro de que querés eliminar el reclamo ${claim.claimId} de forma permanente? No se podrá recuperar.`)) {
-        return;
-    }
+    if (!confirm(`¿Eliminar reclamo ${claim.claimId}?`)) return;
 
     try {
-        const { doc } = window.dbMethods;
-        // Importamos dinámicamente deleteDoc desde window ya que no estaba precargado por scope directo
         const { deleteDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+        const { doc } = window.dbMethods;
         
         const docRef = doc(window.db, "reclamos", claim._fbId);
         await deleteDoc(docRef);
 
-        // Remover del estado local de la aplicación
-        state.claims = state.claims.filter(c => c.id !== id);
+        state.claims.splice(idx, 1);
 
         renderPublicClaimsList();
         renderMapPins();
         if (state.isAdmin) syncAdminDashboard();
         document.getElementById('detailPanel').classList.remove('visible');
         
-        console.log("🗑️ Reclamo eliminado físicamente de Firebase Firestore.");
+        console.log("✓ Reclamo eliminado");
     } catch (error) {
-        console.error("❌ Error al eliminar el documento de Firebase:", error);
-        alert("Ocurrió un error al intentar borrar el registro del servidor.");
+        console.error("Error:", error);
+        alert("Error al eliminar.");
     }
 }
 
-function renderPublicClaimsList() {
-    let approved = state.claims.filter(c => c.status === 'approved');
-    
-    if (state.activeCategoryFilter !== 'all') {
-        approved = approved.filter(c => c.category === state.activeCategoryFilter);
-    }
-
-    document.getElementById('claimCounter').textContent = approved.length;
-
-    const html = approved.map(claim => {
-        const cat = CATEGORIES[claim.category] || { icon: '🚧', label: 'Reclamo' };
-        return `
-            <div class="claim-item" onclick="globalOpenDetailWindow(${claim.id})">
-                <div class="claim-item-header">
-                    <span class="claim-item-id">${claim.claimId}</span>
-                    <span class="claim-item-status">Validado</span>
-                </div>
-                <div class="claim-item-name">${cat.icon} ${cat.label}</div>
-                <div class="claim-item-desc">${claim.description.substring(0, 55)}...</div>
-            </div>
-        `;
-    }).join('');
-    document.getElementById('claimsList').innerHTML = html || '<div style="padding:166px; font-size:11px; color:#64748b; text-align:center; font-weight:600;">Sin reportes para esta sección.</div>';
-}
-
-// Sincronización Matemática Completa de las 5 Métrica del Sidebar
 function syncAdminDashboard() {
     document.getElementById('adminStatTotal').textContent = state.claims.length;
     document.getElementById('adminStatPending').textContent = state.claims.filter(c => c.status === 'pending').length;
@@ -629,14 +689,14 @@ function syncAdminDashboard() {
 
 function renderAdminViewCards(section) {
     const targets = state.claims.filter(c => c.status === section);
-    const html = targets.map(claim => {
+    const html = targets.map((claim, idx) => {
         const cat = CATEGORIES[claim.category] || { icon: '🚧', label: 'Reclamo' };
         return `
             <div class="admin-card">
                 <div class="admin-card-id">${claim.claimId}</div>
                 <div class="admin-card-name">${cat.icon} por ${claim.name}</div>
-                <div class="admin-card-text">"${claim.description.substring(0, 80)}..."</div>
-                <button class="btn-popup-more" onclick="globalOpenDetailWindow(${claim.id})">Inspeccionar Incidentes</button>
+                <div class="admin-card-text">"${claim.description?.substring(0, 80) || claim.title}..."</div>
+                <button class="btn-popup-more" onclick="globalOpenDetailWindow(${state.claims.indexOf(claim)})">Inspeccionar</button>
             </div>
         `;
     }).join('');
@@ -652,7 +712,6 @@ function initPoliticalCounter() {
 
     const run = () => {
         const now = new Date();
-        
         const totalDuration = targetDate - startDate;
         const timeElapsed = now - startDate;
         const timeRemaining = targetDate - now;
@@ -661,12 +720,8 @@ function initPoliticalCounter() {
         let percentComplete = (timeElapsed / totalDuration) * 100;
         percentComplete = Math.min(100, Math.max(0, percentComplete));
 
-        if (progressBar) {
-            progressBar.style.width = `${percentComplete.toFixed(1)}%`;
-        }
-        if (display) {
-            display.textContent = `Transcurrido: ${percentComplete.toFixed(1)}% (${daysRemaining} días restantes)`;
-        }
+        if (progressBar) progressBar.style.width = `${percentComplete.toFixed(1)}%`;
+        if (display) display.textContent = `Transcurrido: ${percentComplete.toFixed(1)}% (${daysRemaining} días restantes)`;
     };
 
     run();
@@ -674,17 +729,17 @@ function initPoliticalCounter() {
 
     const block = document.querySelector('.political-counter');
     if (block) {
-        block.style.cursor = 'pointer'; 
+        block.style.cursor = 'pointer';
         block.addEventListener('dblclick', () => {
-            const intento = prompt('🔑 Ingrese la palabra clave de administración:');
-            if (intento === ADMIN_CODE) {
+            const intento = prompt('🔑 Ingrese clave de administración:');
+            if (intento && md5Hash(intento) === ADMIN_CODE_HASH) {
                 state.isAdmin = true;
                 document.getElementById('adminSessionBar').style.display = 'flex';
-                syncAdminDashboard(); 
-                renderMapPins(); 
-                alert('🔓 Modo Auditor Activado correctamente.');
+                syncAdminDashboard();
+                renderMapPins();
+                alert('✅ Modo Auditor Activado');
             } else if (intento !== null) {
-                alert('❌ Clave incorrecta.');
+                alert('❌ Clave incorrecta');
             }
         });
     }
@@ -697,13 +752,20 @@ async function loadFirebaseData() {
         
         const cargados = [];
         querySnapshot.forEach((doc) => {
-            cargados.push({ _fbId: doc.id, ...doc.data() });
+            const data = doc.data();
+            cargados.push({
+                _fbId: doc.id,
+                id: cargados.length,
+                ...data,
+                adhesions: data.adhesions || 0,
+                priority: data.priority || 'normal'
+            });
         });
         
         state.claims = cargados;
-        console.log("🔥 Datos cargados con éxito desde Firebase:", state.claims.length);
+        console.log("✅ Datos cargados:", state.claims.length);
     } catch (error) {
-        console.error("❌ Error al cargar datos de Firebase:", error);
+        console.error("❌ Error Firebase:", error);
         state.claims = [];
     }
 }

@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mapa de Reclamos - Olavarría</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%23FFD23F'/><circle cx='50' cy='50' r='40' fill='%23FF932B'/><circle cx='50' cy='50' r='32' fill='%23FA582C'/></svg>">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="style.css">
 </head>
@@ -23,7 +24,7 @@
                 <img src="456193182_1050157173398567_6145674300254296172_n.png" alt="Logo" class="site-logo">
                 <div class="header-titles">
                     <h1>MAPA DE RECLAMOS Y DENUNCIAS <span>CIUDADANAS</span></h1>
-                    <p class="header-subtitle">Plataforma interactiva colaborativa: reporta baches, veredas rotas, luminarias oscuras y otros incidentes urbanos. Un mapa participativo donde los vecinos monitorean de forma transparente el estado de la infraestructura en Olavarría.</p>
+                    <p class="header-subtitle">Plataforma participativa para reportar problemas de infraestructura: parques, salud, alumbrado, calles, basura y más. Un espacio donde los vecinos impulsan soluciones juntos en Olavarría.</p>
                 </div>
             </div>
             <div class="header-right">
@@ -36,7 +37,7 @@
                 <div id="map"></div>
 
                 <div class="category-filter-bar" id="categoryFilterBar">
-                    <button class="filter-btn active" data-cat="all" title="Ver todos">👁️‍🗨️</button>
+                    <button class="filter-btn active" data-cat="all" title="Ver todos">👁️</button>
                     <button class="filter-btn" data-cat="plazas" title="Parques / Paseos / Plazas">🌳</button>
                     <button class="filter-btn" data-cat="salud" title="Salud">🏥</button>
                     <button class="filter-btn" data-cat="alumbrado" title="Alumbrado">💡</button>
@@ -55,6 +56,15 @@
                         <button id="closeRecentPopup" class="close-popup-btn">×</button>
                     </div>
                     <div class="recent-popup-body" id="claimsList"></div>
+                </div>
+
+                <div id="mapClickOverlay" class="map-click-overlay hidden">
+                    <div class="map-click-modal">
+                        <h3>Crear reclamo en esta ubicación</h3>
+                        <p id="clickCoords"></p>
+                        <button id="confirmMapClick" class="btn-confirm">Crear reclamo aquí</button>
+                        <button id="cancelMapClick" class="btn-cancel">Cancelar</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -89,13 +99,13 @@
                 <button id="closeModal" class="btn-close">×</button>
             </div>
             <div class="modal-body">
-                <div class="form-step active" data-step="1">
-                    <h3>1. Información de Identidad</h3>
-                    <input type="text" id="claimName" placeholder="Ingresa tu nombre" class="input-field">
-                    <input type="email" id="claimEmail" placeholder="Tu correo electrónico" class="input-field">
+                <div class="form-section">
+                    <h3>1. Título del Reclamo</h3>
+                    <input type="text" id="claimTitle" placeholder="Ej: Bache en Alsina, Árbol caído, Luminaria rota..." class="input-field">
                 </div>
-                <div class="form-step" data-step="2">
-                    <h3>2. Elige la categoría</h3>
+
+                <div class="form-section">
+                    <h3>2. Categoría</h3>
                     <div class="category-grid" id="categoryGrid">
                         <div class="category-option" data-value="plazas">
                             <span class="cat-icon">🌳</span>
@@ -123,49 +133,46 @@
                         </div>
                     </div>
                 </div>
-                <div class="form-step" data-step="3">
-                    <h3>3. Nivel de Urgencia</h3>
-                    <div class="category-grid" id="urgencyGrid">
-                        <div class="category-option" data-value="normal">
-                            <span class="cat-icon">🟠</span>
-                            <span class="cat-label">Normal/Estándar</span>
-                        </div>
-                        <div class="category-option" data-value="alta">
-                            <span class="cat-icon">🔴</span>
-                            <span class="cat-label">Alta/Peligrosa</span>
-                        </div>
-                    </div>
-                </div>
-                <div class="form-step" data-step="4">
-                    <h3>4. Geolocalización</h3>
+
+                <div class="form-section">
+                    <h3>3. Ubicación</h3>
                     <button type="button" id="useGPS" class="btn-location">📍 Capturar por GPS</button>
                     <div style="text-align:center; margin:8px 0; font-size:11px; color:#64748b; font-weight: 600;">O REGISTRA DIRECCIÓN MANUAL</div>
-                    <input type="text" id="claimAddress" placeholder="Ej: Alsina 2400" class="input-field">
+                    <input type="text" id="claimAddress" placeholder="Ej: Rivadavia 2800" class="input-field">
                     <div id="locationDisplay" style="display:none; font-size:12px; color:#10b981; font-weight:600; text-align:center;"></div>
                 </div>
-                <div class="form-step" data-step="5">
-                    <h3>5. Añadir Detalles</h3>
-                    <textarea id="claimDescription" placeholder="Describe brevemente el problema aquí..." class="input-field" style="min-height:100px; resize:none;"></textarea>
+
+                <div class="form-section">
+                    <h3>4. Descripción (Opcional)</h3>
+                    <textarea id="claimDescription" placeholder="Contanos más detalles..." class="input-field" style="min-height:80px; resize:none;"></textarea>
                 </div>
-                <div class="form-step" data-step="6">
-                    <h3>6. Evidencia del Daño</h3>
+
+                <div class="form-section">
+                    <h3>5. Imagen (Opcional)</h3>
                     <div id="photoDropZone" class="photo-zone">
                         <input type="file" id="claimPhoto" accept="image/*" style="display:none;">
                         <span style="font-size:30px;">📸</span>
                         <p style="font-size:13px; font-weight:700; margin-top:4px; color: var(--text-main);">Cargar imagen</p>
-                        <span style="font-size:10px; color:var(--text-muted);">Máximo 5MB (Fotos de alta resolución)</span>
+                        <span style="font-size:10px; color:var(--text-muted);">Máximo 5MB</span>
                     </div>
                     <div id="photoPreview" style="display:none; text-align:center;">
                         <div class="photo-preview"><img id="photoImg" alt="Preview"></div>
                         <button type="button" id="removePhoto" class="btn-secondary" style="padding:4px 10px; font-size:11px; margin-top:6px;">Quitar foto</button>
                     </div>
                 </div>
+
+                <div class="form-section">
+                    <h3>6. Tus Datos</h3>
+                    <p style="font-size:12px; color:#64748b; margin-bottom:10px;">Dejanos tus datos para mantenerte informado sobre novedades de tu reclamo</p>
+                    <input type="text" id="claimName" placeholder="Tu nombre" class="input-field">
+                    <input type="tel" id="claimPhone" placeholder="Teléfono (Ej: 2284123456)" class="input-field">
+                </div>
+
                 <div id="formMessage" class="form-message"></div>
             </div>
             <div class="modal-footer">
-                <button id="prevBtn" class="btn-secondary" style="display:none;">Atrás</button>
-                <button id="nextBtn" class="btn-primary">Siguiente</button>
-                <button id="submitBtn" class="btn-success" style="display:none;">Enviar Reporte</button>
+                <button id="submitBtn" class="btn-success">Enviar Reporte</button>
+                <button id="closeModalBtn" class="btn-secondary">Cancelar</button>
             </div>
         </div>
     </div>
@@ -176,6 +183,23 @@
             <button id="closeDetail" class="btn-close">×</button>
         </div>
         <div class="detail-body" id="detailBody"></div>
+    </div>
+
+    <div id="adhesionModal" class="modal hidden">
+        <div class="modal-content modal-adhesion">
+            <div class="modal-header">
+                <h2>Adherir a este reclamo</h2>
+                <button id="closeAdhesionModal" class="btn-close">×</button>
+            </div>
+            <div class="modal-body">
+                <p style="margin-bottom: 14px; color: #64748b;">Tu nombre nos ayuda a validar la cantidad de vecinos preocupados por este problema.</p>
+                <input type="text" id="adhesionName" placeholder="Tu nombre" class="input-field">
+            </div>
+            <div class="modal-footer">
+                <button id="submitAdhesion" class="btn-success">Adherir</button>
+                <button id="cancelAdhesion" class="btn-secondary">Cancelar</button>
+            </div>
+        </div>
     </div>
 
     <div id="adminPanel" class="admin-panel hidden">
