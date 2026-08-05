@@ -6,7 +6,7 @@ const OLAVARRIA_BOUNDS = {
     minLng: -60.52,
     maxLng: -60.05
 };
-const ADMIN_CODE_HASH = '5f4dcc3b5aa765d61d8327deb882cf99'; // MD5 de 'varilla'
+const ADMIN_CODE = 'varilla';
 
 const CATEGORIES = {
     plazas: { icon: '🌳', label: 'Parques/Paseos/Plazas' },
@@ -15,12 +15,6 @@ const CATEGORIES = {
     calle: { icon: '🕳️', label: 'Bache/Calle/Camino' },
     basura: { icon: '🚮', label: 'Basura' },
     otro: { icon: '🚧', label: 'Otros' }
-};
-
-const URGENCY_COLORS = {
-    normal: { color: '#f59e0b', label: '🟡 Normal' },
-    prioritario: { color: '#f97316', label: '🟠 Prioritario' },
-    urgente: { color: '#ef4444', label: '🔴 Urgente' }
 };
 
 const state = {
@@ -46,16 +40,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 function checkAdminAccess() {
     const params = new URLSearchParams(window.location.search);
-    const adminParam = params.get('admin');
-    if (adminParam && md5Hash(adminParam) === ADMIN_CODE_HASH) {
+    if (params.get('admin') === ADMIN_CODE) {
         state.isAdmin = true;
         document.getElementById('adminSessionBar').style.display = 'flex';
     }
-}
-
-function md5Hash(str) {
-    return Array.from(new Uint8Array(new TextEncoder().encode(str)))
-        .reduce((s, b) => s + b.toString(16).padStart(2, '0'), '');
 }
 
 function isWithinOlavarria(lat, lng) {
@@ -73,12 +61,10 @@ function initLeafletMap() {
         attribution: '© OpenStreetMap'
     }).addTo(state.map);
 
-    // Agregar rectángulo de límites
     const bounds = [[OLAVARRIA_BOUNDS.minLat, OLAVARRIA_BOUNDS.minLng], 
                     [OLAVARRIA_BOUNDS.maxLat, OLAVARRIA_BOUNDS.maxLng]];
     L.rectangle(bounds, { color: '#cbd5e1', weight: 2, fillOpacity: 0.05, dashArray: '5, 5' }).addTo(state.map);
 
-    // Click en mapa para crear reclamo
     state.map.on('click', (e) => {
         const lat = e.latlng.lat;
         const lng = e.latlng.lng;
@@ -113,7 +99,6 @@ function showMapClickModal(lat, lng) {
 }
 
 function setupApplicationEvents() {
-    // Modal de reclamo
     document.getElementById('newClaimBtn').addEventListener('click', () => {
         state.currentLocation = null;
         openClaimModal();
@@ -121,13 +106,10 @@ function setupApplicationEvents() {
     
     document.getElementById('closeModal').addEventListener('click', closeClaimModal);
     document.getElementById('closeModalBtn').addEventListener('click', closeClaimModal);
-
-    // Detalle panel
     document.getElementById('closeDetail').addEventListener('click', () => {
         document.getElementById('detailPanel').classList.remove('visible');
     });
 
-    // Burbuja de recientes
     const trigger = document.getElementById('recentClaimsTrigger');
     const popup = document.getElementById('recentClaimsPopup');
     trigger.addEventListener('click', (e) => {
@@ -139,7 +121,6 @@ function setupApplicationEvents() {
         popup.classList.add('hidden');
     });
 
-    // Filtro de categorías
     document.getElementById('categoryFilterBar').addEventListener('click', (e) => {
         const btn = e.target.closest('.filter-btn');
         if (!btn) return;
@@ -152,7 +133,6 @@ function setupApplicationEvents() {
         renderPublicClaimsList();
     });
 
-    // Selección de categoría en formulario
     const categoriesOptions = document.querySelectorAll('#categoryGrid .category-option');
     categoriesOptions.forEach(opt => {
         opt.addEventListener('click', () => {
@@ -162,20 +142,14 @@ function setupApplicationEvents() {
         });
     });
 
-    // GPS
     document.getElementById('useGPS').addEventListener('click', triggerGPSCapture);
-
-    // Fotos
     document.getElementById('photoDropZone').addEventListener('click', () => {
         document.getElementById('claimPhoto').click();
     });
     document.getElementById('claimPhoto').addEventListener('change', processPhotoFile);
     document.getElementById('removePhoto').addEventListener('click', clearPhotoEvidencia);
-
-    // Submit formulario
     document.getElementById('submitBtn').addEventListener('click', executeSubmitForm);
 
-    // Admin panel
     document.getElementById('toggleDashBtn').addEventListener('click', () => {
         document.getElementById('adminPanel').classList.remove('hidden');
         syncAdminDashboard();
@@ -188,7 +162,6 @@ function setupApplicationEvents() {
         window.location.href = window.location.pathname;
     });
 
-    // Filtros admin
     document.querySelectorAll('.admin-nav .nav-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             document.querySelectorAll('.admin-nav .nav-btn').forEach(b => b.classList.remove('active'));
@@ -197,14 +170,12 @@ function setupApplicationEvents() {
         });
     });
 
-    // Modal de adhesión
     document.getElementById('closeAdhesionModal').addEventListener('click', () => {
         document.getElementById('adhesionModal').classList.add('hidden');
     });
     document.getElementById('cancelAdhesion').addEventListener('click', () => {
         document.getElementById('adhesionModal').classList.add('hidden');
     });
-    document.getElementById('submitAdhesion').addEventListener('click', executeSubmitAdhesion);
 }
 
 function openClaimModal() {
@@ -212,7 +183,6 @@ function openClaimModal() {
     resetFormState();
     modal.classList.remove('hidden');
     
-    // Pre-llenar ubicación si viene de click en mapa
     if (state.currentLocation) {
         const locDisplay = document.getElementById('locationDisplay');
         locDisplay.style.display = 'block';
@@ -306,7 +276,6 @@ function clearPhotoEvidencia() {
 }
 
 async function executeSubmitForm() {
-    // Validaciones
     const title = document.getElementById('claimTitle').value.trim();
     const name = document.getElementById('claimName').value.trim();
     const phone = document.getElementById('claimPhone').value.trim();
@@ -320,20 +289,24 @@ async function executeSubmitForm() {
     if (!phone) return flashErrorMessage('Ingresa tu teléfono');
     if (!phone.startsWith('2284')) return flashErrorMessage('Teléfono debe empezar con 2284 (Olavarría)');
 
+    const claimId = 'CLM-' + Date.now().toString().slice(-8);
+    
     const claimData = {
-        claimId: generateClaimId(),
-        title,
-        category,
-        latitude: location.lat,
-        longitude: location.lng,
-        address: document.getElementById('claimAddress').value.trim(),
+        id: Date.now(),
+        claimId: claimId,
+        name: name,
+        email: '',
+        title: title,
+        category: category,
+        urgency: 'normal',
+        address: document.getElementById('claimAddress').value.trim() || 'Ubicación GPS',
         description: document.getElementById('claimDescription').value.trim(),
+        lat: location.lat,
+        lng: location.lng,
         photo: state.currentPhoto || null,
-        name,
-        phone,
+        phone: phone,
         status: 'pending',
         adhesions: 0,
-        priority: 'normal',
         createdAt: new Date().toISOString()
     };
 
@@ -349,6 +322,8 @@ async function executeSubmitForm() {
         renderMapPins();
         renderPublicClaimsList();
 
+        if (state.isAdmin) syncAdminDashboard();
+
         setTimeout(() => {
             document.getElementById('formMessage').style.display = 'none';
         }, 3000);
@@ -356,10 +331,6 @@ async function executeSubmitForm() {
         console.error('Error al guardar:', error);
         flashErrorMessage('Error al guardar. Intenta nuevamente.');
     }
-}
-
-function generateClaimId() {
-    return 'CLM-' + Date.now().toString().slice(-8);
 }
 
 function flashErrorMessage(msg) {
@@ -385,48 +356,50 @@ function calculatePriority(adhesions) {
     return 'normal';
 }
 
+function getPriorityLabel(adhesions) {
+    if (adhesions >= 20) return '🔴 Urgente';
+    if (adhesions >= 10) return '🟠 Prioritario';
+    return '🟡 Normal';
+}
+
 async function addAdhesion(claimId) {
     const modal = document.getElementById('adhesionModal');
     modal.classList.remove('hidden');
 
-    document.getElementById('submitAdhesion').onclick = async () => {
-        await executeSubmitAdhesion(claimId);
+    const handleSubmit = async () => {
+        const name = document.getElementById('adhesionName').value.trim();
+        if (!name) {
+            alert('Ingresa tu nombre para adherir');
+            return;
+        }
+
+        const claim = state.claims.find(c => c._fbId === claimId);
+        if (!claim) return;
+
+        try {
+            claim.adhesions = (claim.adhesions || 0) + 1;
+
+            const { doc, updateDoc } = window.dbMethods;
+            const docRef = doc(window.db, "reclamos", claim._fbId);
+            await updateDoc(docRef, {
+                adhesions: claim.adhesions
+            });
+
+            document.getElementById('adhesionName').value = '';
+            document.getElementById('adhesionModal').classList.add('hidden');
+
+            renderPublicClaimsList();
+            renderMapPins();
+            globalOpenDetailWindow(claimId);
+
+            alert('✅ ¡Gracias por tu adhesión!');
+        } catch (error) {
+            console.error('Error al adherir:', error);
+            alert('Error al guardar tu adhesión');
+        }
     };
-}
 
-async function executeSubmitAdhesion(claimId) {
-    const name = document.getElementById('adhesionName').value.trim();
-    if (!name) {
-        alert('Ingresa tu nombre para adherir');
-        return;
-    }
-
-    const claim = state.claims.find(c => c.id === claimId || c.claimId === claimId);
-    if (!claim) return;
-
-    try {
-        claim.adhesions = (claim.adhesions || 0) + 1;
-        claim.priority = calculatePriority(claim.adhesions);
-
-        const { doc, updateDoc } = window.dbMethods;
-        const docRef = doc(window.db, "reclamos", claim._fbId);
-        await updateDoc(docRef, {
-            adhesions: claim.adhesions,
-            priority: claim.priority
-        });
-
-        document.getElementById('adhesionName').value = '';
-        document.getElementById('adhesionModal').classList.add('hidden');
-
-        renderPublicClaimsList();
-        renderMapPins();
-        globalOpenDetailWindow(claim.id);
-
-        alert('✅ ¡Gracias por tu adhesión!');
-    } catch (error) {
-        console.error('Error al adherir:', error);
-        alert('Error al guardar tu adhesión');
-    }
+    document.getElementById('submitAdhesion').onclick = handleSubmit;
 }
 
 function renderMapPins() {
@@ -439,33 +412,34 @@ function renderMapPins() {
         filtered = filtered.filter(c => c.category === state.activeCategoryFilter);
     }
 
-    // Ordenar por prioridad y adhesiones
     filtered.sort((a, b) => {
+        const aPrio = calculatePriority(a.adhesions || 0);
+        const bPrio = calculatePriority(b.adhesions || 0);
         const priorityOrder = { urgente: 0, prioritario: 1, normal: 2 };
-        const aPrio = priorityOrder[a.priority] || 2;
-        const bPrio = priorityOrder[b.priority] || 2;
-        if (aPrio !== bPrio) return aPrio - bPrio;
+        if (priorityOrder[aPrio] !== priorityOrder[bPrio]) {
+            return priorityOrder[aPrio] - priorityOrder[bPrio];
+        }
         return (b.adhesions || 0) - (a.adhesions || 0);
     });
 
     filtered.forEach(claim => {
         const cat = CATEGORIES[claim.category] || { icon: '🚧' };
-        const urgency = URGENCY_COLORS[claim.priority] || URGENCY_COLORS.normal;
+        const priorityLabel = getPriorityLabel(claim.adhesions || 0);
         const icon = L.divIcon({
-            html: `<div style="font-size:24px; filter: drop-shadow(0 0 2px rgba(0,0,0,0.3));">${urgency.label.split(' ')[0]}</div>`,
+            html: `<div style="font-size:24px; filter: drop-shadow(0 0 2px rgba(0,0,0,0.3));">${priorityLabel.split(' ')[0]}</div>`,
             iconSize: [32, 32],
             className: ''
         });
 
-        const marker = L.marker([claim.latitude, claim.longitude], { icon }).addTo(state.map);
+        const marker = L.marker([claim.lat, claim.lng], { icon }).addTo(state.map);
 
         const popupHTML = `
             <div class="custom-popup">
                 ${claim.photo ? `<div class="popup-img-container"><img src="${claim.photo}" class="popup-mini-img"></div>` : ''}
-                <div class="popup-title">${cat.icon} ${claim.title}</div>
+                <div class="popup-title">${cat.icon} ${claim.title || claim.claimId}</div>
                 <div class="popup-meta">${claim.address || 'Ubicación registrada'}</div>
-                <div class="popup-time">${urgency.label}</div>
-                <button class="btn-popup-more" onclick="globalOpenDetailWindow(${state.claims.indexOf(claim)})">Ver detalles</button>
+                <div class="popup-time">${priorityLabel}</div>
+                <button class="btn-popup-more" onclick="globalOpenDetailWindow('${claim._fbId}')">Ver detalles</button>
             </div>
         `;
 
@@ -474,12 +448,11 @@ function renderMapPins() {
     });
 }
 
-function globalOpenDetailWindow(idx) {
-    if (typeof idx !== 'number') idx = state.claims.findIndex(c => c.id === idx);
-    const claim = state.claims[idx];
+function globalOpenDetailWindow(fbId) {
+    const claim = state.claims.find(c => c._fbId === fbId);
     if (!claim) return;
 
-    const urgency = URGENCY_COLORS[claim.priority] || URGENCY_COLORS.normal;
+    const priorityLabel = getPriorityLabel(claim.adhesions || 0);
     const cat = CATEGORIES[claim.category] || { icon: '🚧', label: 'Reclamo' };
 
     let html = '';
@@ -495,7 +468,7 @@ function globalOpenDetailWindow(idx) {
         </div>
         <div class="detail-card">
             <div class="detail-label">Título</div>
-            <div class="detail-value">${claim.title}</div>
+            <div class="detail-value">${claim.title || claim.claimId}</div>
         </div>
         <div class="detail-card">
             <div class="detail-label">Categoría</div>
@@ -503,11 +476,11 @@ function globalOpenDetailWindow(idx) {
         </div>
         <div class="detail-card">
             <div class="detail-label">Estado de Prioridad</div>
-            <div class="detail-value"><span class="status-badge status-${claim.priority}">${urgency.label}</span></div>
+            <div class="detail-value"><span class="status-badge status-${calculatePriority(claim.adhesions || 0)}">${priorityLabel}</span></div>
         </div>
         <div class="detail-card">
             <div class="detail-label">Ubicación</div>
-            <div class="detail-value">${claim.address || `${claim.latitude.toFixed(4)}, ${claim.longitude.toFixed(4)}`}</div>
+            <div class="detail-value">${claim.address || `${claim.lat.toFixed(4)}, ${claim.lng.toFixed(4)}`}</div>
         </div>
     `;
 
@@ -520,27 +493,25 @@ function globalOpenDetailWindow(idx) {
         `;
     }
 
-    // Adhesiones
     html += `
         <div class="adhesion-section">
             <div class="adhesion-count">
                 <div class="adhesion-number">${claim.adhesions || 0}</div>
                 <div class="adhesion-label">vecino${(claim.adhesions || 0) !== 1 ? 's' : ''} adhieren</div>
             </div>
-            <button class="btn-adhesion" onclick="addAdhesion(${idx})">Adherir</button>
+            <button class="btn-adhesion" onclick="addAdhesion('${claim._fbId}')">Adherir</button>
         </div>
     `;
 
-    // Compartir
     const shareUrl = `${window.location.origin}${window.location.pathname}?claim=${claim.claimId}`;
     html += `
         <div class="detail-card">
             <div class="detail-label">Compartir</div>
             <div class="share-section">
-                <button class="share-btn share-whatsapp" onclick="shareClaimOn('whatsapp', '${claim.title}', '${shareUrl}')" title="WhatsApp">📱</button>
-                <button class="share-btn share-facebook" onclick="shareClaimOn('facebook', '${claim.title}', '${shareUrl}')" title="Facebook">f</button>
-                <button class="share-btn share-instagram" onclick="shareClaimOn('instagram', '${claim.title}', '${shareUrl}')" title="Instagram">📷</button>
-                <button class="share-btn share-twitter" onclick="shareClaimOn('twitter', '${claim.title}', '${shareUrl}')" title="X">𝕏</button>
+                <button class="share-btn share-whatsapp" onclick="shareClaimOn('whatsapp', '${claim.title || claim.claimId}', '${shareUrl}')" title="WhatsApp">📱</button>
+                <button class="share-btn share-facebook" onclick="shareClaimOn('facebook', '${claim.title || claim.claimId}', '${shareUrl}')" title="Facebook">f</button>
+                <button class="share-btn share-instagram" onclick="shareClaimOn('instagram', '${claim.title || claim.claimId}', '${shareUrl}')" title="Instagram">📷</button>
+                <button class="share-btn share-twitter" onclick="shareClaimOn('twitter', '${claim.title || claim.claimId}', '${shareUrl}')" title="X">𝕏</button>
             </div>
         </div>
     `;
@@ -548,15 +519,15 @@ function globalOpenDetailWindow(idx) {
     if (state.isAdmin) {
         html += `
             <div class="detail-actions">
-                <button class="btn-action btn-approve" onclick="dispatchStatus(${idx}, 'approved')">✅ Aprobar</button>
-                <button class="btn-action btn-reject" onclick="dispatchStatus(${idx}, 'rejected')">❌ Rechazar</button>
+                <button class="btn-action btn-approve" onclick="dispatchStatus('${claim._fbId}', 'approved')">✅ Aprobar</button>
+                <button class="btn-action btn-reject" onclick="dispatchStatus('${claim._fbId}', 'rejected')">❌ Rechazar</button>
             </div>
         `;
         if (claim.status === 'approved') {
             html += `
                 <div class="detail-actions">
-                    <button class="btn-action" style="background:#8b5cf6; color:white;" onclick="dispatchStatus(${idx}, 'solved')">🛠️ Solucionado</button>
-                    <button class="btn-action btn-reject" onclick="deleteClaimFromDatabase(${idx})">🗑️ Borrar</button>
+                    <button class="btn-action" style="background:#8b5cf6; color:white;" onclick="dispatchStatus('${claim._fbId}', 'solved')">🛠️ Solucionado</button>
+                    <button class="btn-action btn-reject" onclick="deleteClaimFromDatabase('${claim._fbId}')">🗑️ Borrar</button>
                 </div>
             `;
         }
@@ -598,27 +569,28 @@ function renderPublicClaimsList() {
         approved = approved.filter(c => c.category === state.activeCategoryFilter);
     }
 
-    // Ordenar por prioridad
     approved.sort((a, b) => {
+        const aPrio = calculatePriority(a.adhesions || 0);
+        const bPrio = calculatePriority(b.adhesions || 0);
         const priorityOrder = { urgente: 0, prioritario: 1, normal: 2 };
-        const aPrio = priorityOrder[a.priority] || 2;
-        const bPrio = priorityOrder[b.priority] || 2;
-        if (aPrio !== bPrio) return aPrio - bPrio;
+        if (priorityOrder[aPrio] !== priorityOrder[bPrio]) {
+            return priorityOrder[aPrio] - priorityOrder[bPrio];
+        }
         return (b.adhesions || 0) - (a.adhesions || 0);
     });
 
     document.getElementById('claimCounter').textContent = approved.length;
 
-    const html = approved.map((claim, idx) => {
+    const html = approved.map((claim) => {
         const cat = CATEGORIES[claim.category] || { icon: '🚧', label: 'Reclamo' };
-        const urgency = URGENCY_COLORS[claim.priority] || URGENCY_COLORS.normal;
+        const priorityLabel = getPriorityLabel(claim.adhesions || 0);
         return `
-            <div class="claim-item" onclick="globalOpenDetailWindow(${state.claims.indexOf(claim)})">
+            <div class="claim-item" onclick="globalOpenDetailWindow('${claim._fbId}')">
                 <div class="claim-item-header">
                     <span class="claim-item-id">${claim.claimId}</span>
-                    <span class="claim-item-status">${urgency.label}</span>
+                    <span class="claim-item-status">${priorityLabel}</span>
                 </div>
-                <div class="claim-item-name">${cat.icon} ${claim.title}</div>
+                <div class="claim-item-name">${cat.icon} ${claim.title || claim.claimId}</div>
                 <div class="claim-item-desc">${claim.address || claim.description?.substring(0, 55) || 'Ubicación registrada'}...</div>
             </div>
         `;
@@ -626,13 +598,13 @@ function renderPublicClaimsList() {
     document.getElementById('claimsList').innerHTML = html || '<div style="padding:16px; font-size:11px; color:#64748b; text-align:center; font-weight:600;">Sin reportes para esta sección.</div>';
 }
 
-async function dispatchStatus(idx, newStatus) {
-    const claim = state.claims[idx];
+async function dispatchStatus(fbId, newStatus) {
+    const claim = state.claims.find(c => c._fbId === fbId);
     if (!claim) return;
 
     try {
         const { doc, updateDoc } = window.dbMethods;
-        const docRef = doc(window.db, "reclamos", claim._fbId);
+        const docRef = doc(window.db, "reclamos", fbId);
 
         await updateDoc(docRef, { status: newStatus });
         claim.status = newStatus;
@@ -649,8 +621,8 @@ async function dispatchStatus(idx, newStatus) {
     }
 }
 
-async function deleteClaimFromDatabase(idx) {
-    const claim = state.claims[idx];
+async function deleteClaimFromDatabase(fbId) {
+    const claim = state.claims.find(c => c._fbId === fbId);
     if (!claim) return;
 
     if (!confirm(`¿Eliminar reclamo ${claim.claimId}?`)) return;
@@ -659,10 +631,10 @@ async function deleteClaimFromDatabase(idx) {
         const { deleteDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
         const { doc } = window.dbMethods;
         
-        const docRef = doc(window.db, "reclamos", claim._fbId);
+        const docRef = doc(window.db, "reclamos", fbId);
         await deleteDoc(docRef);
 
-        state.claims.splice(idx, 1);
+        state.claims = state.claims.filter(c => c._fbId !== fbId);
 
         renderPublicClaimsList();
         renderMapPins();
@@ -689,14 +661,14 @@ function syncAdminDashboard() {
 
 function renderAdminViewCards(section) {
     const targets = state.claims.filter(c => c.status === section);
-    const html = targets.map((claim, idx) => {
+    const html = targets.map((claim) => {
         const cat = CATEGORIES[claim.category] || { icon: '🚧', label: 'Reclamo' };
         return `
             <div class="admin-card">
                 <div class="admin-card-id">${claim.claimId}</div>
                 <div class="admin-card-name">${cat.icon} por ${claim.name}</div>
-                <div class="admin-card-text">"${claim.description?.substring(0, 80) || claim.title}..."</div>
-                <button class="btn-popup-more" onclick="globalOpenDetailWindow(${state.claims.indexOf(claim)})">Inspeccionar</button>
+                <div class="admin-card-text">"${claim.description?.substring(0, 80) || claim.title || claim.claimId}..."</div>
+                <button class="btn-popup-more" onclick="globalOpenDetailWindow('${claim._fbId}')">Inspeccionar</button>
             </div>
         `;
     }).join('');
@@ -732,7 +704,7 @@ function initPoliticalCounter() {
         block.style.cursor = 'pointer';
         block.addEventListener('dblclick', () => {
             const intento = prompt('🔑 Ingrese clave de administración:');
-            if (intento && md5Hash(intento) === ADMIN_CODE_HASH) {
+            if (intento === ADMIN_CODE) {
                 state.isAdmin = true;
                 document.getElementById('adminSessionBar').style.display = 'flex';
                 syncAdminDashboard();
@@ -755,10 +727,8 @@ async function loadFirebaseData() {
             const data = doc.data();
             cargados.push({
                 _fbId: doc.id,
-                id: cargados.length,
                 ...data,
-                adhesions: data.adhesions || 0,
-                priority: data.priority || 'normal'
+                adhesions: data.adhesions || 0
             });
         });
         
