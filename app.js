@@ -9,12 +9,12 @@ const OLAVARRIA_BOUNDS = {
 const ADMIN_CODE = 'varilla';
 
 const CATEGORIES = {
-    plazas: { icon: '🌳', label: 'Parques/Paseos/Plazas' },
-    salud: { icon: '🏥', label: 'Salud' },
-    alumbrado: { icon: '💡', label: 'Alumbrado' },
-    calle: { icon: '🕳️', label: 'Bache/Calle/Camino' },
-    basura: { icon: '🚮', label: 'Basura' },
-    otro: { icon: '🚧', label: 'Otros' }
+    plazas: { label: 'Parques/Paseos/Plazas' },
+    salud: { label: 'Salud' },
+    alumbrado: { label: 'Alumbrado' },
+    calle: { label: 'Bache/Calle/Camino' },
+    basura: { label: 'Basura' },
+    otro: { label: 'Otros' }
 };
 
 const state = {
@@ -36,6 +36,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupApplicationEvents();
     renderPublicClaimsList();
     initPoliticalCounter();
+    handleDeepLinking();
 });
 
 function checkAdminAccess() {
@@ -43,6 +44,23 @@ function checkAdminAccess() {
     if (params.get('admin') === ADMIN_CODE) {
         state.isAdmin = true;
         document.getElementById('adminSessionBar').style.display = 'flex';
+    }
+}
+
+function handleDeepLinking() {
+    const params = new URLSearchParams(window.location.search);
+    const claimId = params.get('claim');
+    
+    if (claimId) {
+        const claim = state.claims.find(c => c.claimId === claimId && c.status === 'approved');
+        if (claim) {
+            setTimeout(() => {
+                if (state.map) {
+                    state.map.setView([claim.lat, claim.lng], 16);
+                }
+                globalOpenDetailWindow(claim._fbId);
+            }, 500);
+        }
     }
 }
 
@@ -82,8 +100,11 @@ function initLeafletMap() {
 }
 
 function showMapClickModal(lat, lng) {
+    const indicator = document.getElementById('mapClickIndicator');
+    if (indicator) indicator.remove();
+    
     const overlay = document.getElementById('mapClickOverlay');
-    document.getElementById('clickCoords').textContent = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+    document.getElementById('clickCoords').textContent = `📍 ${lat.toFixed(4)}, ${lng.toFixed(4)}`;
     overlay.classList.remove('hidden');
 
     document.getElementById('confirmMapClick').onclick = () => {
@@ -101,6 +122,8 @@ function showMapClickModal(lat, lng) {
 function setupApplicationEvents() {
     document.getElementById('newClaimBtn').addEventListener('click', () => {
         state.currentLocation = null;
+        state.selectedCategory = null;
+        state.currentPhoto = null;
         openClaimModal();
     });
     
@@ -143,6 +166,7 @@ function setupApplicationEvents() {
     });
 
     document.getElementById('useGPS').addEventListener('click', triggerGPSCapture);
+    document.getElementById('useMapClick').addEventListener('click', openMapClickModal);
     document.getElementById('photoDropZone').addEventListener('click', () => {
         document.getElementById('claimPhoto').click();
     });
@@ -180,22 +204,63 @@ function setupApplicationEvents() {
 
 function openClaimModal() {
     const modal = document.getElementById('claimModal');
-    resetFormState();
+    const hasLocation = state.currentLocation !== null;
+    resetFormState(hasLocation);
     modal.classList.remove('hidden');
     
     if (state.currentLocation) {
-        const locDisplay = document.getElementById('locationDisplay');
-        locDisplay.style.display = 'block';
-        locDisplay.textContent = `📍 Ubicación capturada: ${state.currentLocation.lat.toFixed(4)}, ${state.currentLocation.lng.toFixed(4)}`;
+        showLocationDisplay();
     }
+}
+
+function showLocationDisplay() {
+    const locDisplay = document.getElementById('locationDisplay');
+    if (state.currentLocation) {
+        locDisplay.style.display = 'block';
+        locDisplay.textContent = `✅ Ubicación: ${state.currentLocation.lat.toFixed(4)}, ${state.currentLocation.lng.toFixed(4)}`;
+    }
+}
+
+function openMapClickModal() {
+    const modal = document.getElementById('claimModal');
+    modal.classList.add('hidden');
+    
+    const indicator = document.createElement('div');
+    indicator.id = 'mapClickIndicator';
+    indicator.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: white;
+        padding: 24px;
+        border-radius: 12px;
+        box-shadow: 0 20px 25px rgba(0,0,0,0.3);
+        z-index: 6000;
+        text-align: center;
+        font-weight: 600;
+        color: #2d3135;
+    `;
+    indicator.innerHTML = `
+        <p style="font-size: 16px; margin-bottom: 12px;">👆 Haz click en el mapa</p>
+        <p style="font-size: 12px; color: #64748b;">Señala dónde está el problema</p>
+        <button onclick="document.getElementById('mapClickIndicator').remove(); document.getElementById('claimModal').classList.remove('hidden');" 
+                style="margin-top: 12px; padding: 8px 16px; background: #e2e8f0; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">Cancelar</button>
+    `;
+    document.body.appendChild(indicator);
 }
 
 function closeClaimModal() {
     document.getElementById('claimModal').classList.add('hidden');
-    resetFormState();
+    const indicator = document.getElementById('mapClickIndicator');
+    if (indicator) indicator.remove();
+    state.currentLocation = null;
+    state.selectedCategory = null;
+    state.currentPhoto = null;
+    document.getElementById('locationDisplay').style.display = 'none';
 }
 
-function resetFormState() {
+function resetFormState(preserveLocation = false) {
     document.getElementById('claimTitle').value = '';
     document.getElementById('claimName').value = '';
     document.getElementById('claimPhone').value = '';
@@ -208,7 +273,7 @@ function resetFormState() {
     document.getElementById('photoDropZone').style.display = 'block';
     
     state.selectedCategory = null;
-    state.currentLocation = null;
+    if (!preserveLocation) state.currentLocation = null;
     state.currentPhoto = null;
 }
 
@@ -279,17 +344,18 @@ async function executeSubmitForm() {
     const title = document.getElementById('claimTitle').value.trim();
     const name = document.getElementById('claimName').value.trim();
     const phone = document.getElementById('claimPhone').value.trim();
+    const address = document.getElementById('claimAddress').value.trim();
     const category = state.selectedCategory;
     const location = state.currentLocation;
 
     if (!title) return flashErrorMessage('Ingresa el título del reclamo');
     if (!category) return flashErrorMessage('Selecciona una categoría');
-    if (!location) return flashErrorMessage('Ingresa la ubicación (GPS o dirección manual)');
+    if (!location) return flashErrorMessage('⚠️ Debes seleccionar ubicación: Usa GPS o señala en el mapa');
     if (!name) return flashErrorMessage('Ingresa tu nombre');
     if (!phone) return flashErrorMessage('Ingresa tu teléfono');
     if (!phone.startsWith('2284')) return flashErrorMessage('Teléfono debe empezar con 2284 (Olavarría)');
 
-    const claimId = 'CLM-' + Date.now().toString().slice(-8);
+    const claimId = 'OLV-' + new Date().getFullYear() + '-' + Math.floor(Math.random() * 10000).toString().padStart(4, '0');
     
     const claimData = {
         id: Date.now(),
@@ -299,7 +365,7 @@ async function executeSubmitForm() {
         title: title,
         category: category,
         urgency: 'normal',
-        address: document.getElementById('claimAddress').value.trim() || 'Ubicación GPS',
+        address: address || '',
         description: document.getElementById('claimDescription').value.trim(),
         lat: location.lat,
         lng: location.lng,
@@ -318,7 +384,10 @@ async function executeSubmitForm() {
         state.claims.push(claimData);
 
         flashSuccessMessage('✅ Reclamo enviado correctamente');
-        closeClaimModal();
+        state.currentLocation = null;
+        state.selectedCategory = null;
+        state.currentPhoto = null;
+        document.getElementById('claimModal').classList.add('hidden');
         renderMapPins();
         renderPublicClaimsList();
 
@@ -357,9 +426,15 @@ function calculatePriority(adhesions) {
 }
 
 function getPriorityLabel(adhesions) {
-    if (adhesions >= 20) return '🔴 Urgente';
-    if (adhesions >= 10) return '🟠 Prioritario';
-    return '🟡 Normal';
+    if (adhesions >= 20) return 'Urgente';
+    if (adhesions >= 10) return 'Prioritario';
+    return 'Normal';
+}
+
+function getPrioritySvg(adhesions) {
+    if (adhesions >= 20) return '<img src="priority-red.svg" class="priority-icon" alt="Urgente">';
+    if (adhesions >= 10) return '<img src="priority-orange.svg" class="priority-icon" alt="Prioritario">';
+    return '<img src="priority-yellow.svg" class="priority-icon" alt="Normal">';
 }
 
 async function addAdhesion(claimId) {
@@ -423,21 +498,23 @@ function renderMapPins() {
     });
 
     filtered.forEach(claim => {
-        const cat = CATEGORIES[claim.category] || { icon: '🚧' };
+        const cat = CATEGORIES[claim.category] || { label: 'Reclamo' };
         const priorityLabel = getPriorityLabel(claim.adhesions || 0);
+        const prioritySvg = getPrioritySvg(claim.adhesions || 0);
         const icon = L.divIcon({
-            html: `<div style="font-size:24px; filter: drop-shadow(0 0 2px rgba(0,0,0,0.3));">${priorityLabel.split(' ')[0]}</div>`,
+            html: `<div style="font-size:24px; filter: drop-shadow(0 0 2px rgba(0,0,0,0.3));">${prioritySvg}</div>`,
             iconSize: [32, 32],
             className: ''
         });
 
         const marker = L.marker([claim.lat, claim.lng], { icon }).addTo(state.map);
 
+        const locText = claim.address || `${claim.lat?.toFixed(4)}, ${claim.lng?.toFixed(4)}`;
         const popupHTML = `
             <div class="custom-popup">
                 ${claim.photo ? `<div class="popup-img-container"><img src="${claim.photo}" class="popup-mini-img"></div>` : ''}
-                <div class="popup-title">${cat.icon} ${claim.title || claim.claimId}</div>
-                <div class="popup-meta">${claim.address || 'Ubicación registrada'}</div>
+                <div class="popup-title">${claim.title || claim.claimId}</div>
+                <div class="popup-meta">${locText}</div>
                 <div class="popup-time">${priorityLabel}</div>
                 <button class="btn-popup-more" onclick="globalOpenDetailWindow('${claim._fbId}')">Ver detalles</button>
             </div>
@@ -453,7 +530,7 @@ function globalOpenDetailWindow(fbId) {
     if (!claim) return;
 
     const priorityLabel = getPriorityLabel(claim.adhesions || 0);
-    const cat = CATEGORIES[claim.category] || { icon: '🚧', label: 'Reclamo' };
+    const cat = CATEGORIES[claim.category] || { label: 'Reclamo' };
 
     let html = '';
 
@@ -472,16 +549,20 @@ function globalOpenDetailWindow(fbId) {
         </div>
         <div class="detail-card">
             <div class="detail-label">Categoría</div>
-            <div class="detail-value">${cat.icon} ${cat.label}</div>
+            <div class="detail-value">${cat.label}</div>
         </div>
         <div class="detail-card">
             <div class="detail-label">Estado de Prioridad</div>
             <div class="detail-value"><span class="status-badge status-${calculatePriority(claim.adhesions || 0)}">${priorityLabel}</span></div>
         </div>
         <div class="detail-card">
-            <div class="detail-label">Ubicación</div>
-            <div class="detail-value">${claim.address || `${claim.lat.toFixed(4)}, ${claim.lng.toFixed(4)}`}</div>
+            <div class="detail-label">Ubicación Registrada</div>
+            <div class="detail-value">${claim.lat.toFixed(4)}, ${claim.lng.toFixed(4)}</div>
         </div>
+        ${claim.address ? `<div class="detail-card">
+            <div class="detail-label">Referencia</div>
+            <div class="detail-value">${claim.address}</div>
+        </div>` : ''}
     `;
 
     if (claim.description) {
@@ -504,6 +585,7 @@ function globalOpenDetailWindow(fbId) {
     `;
 
     const shareUrl = `${window.location.origin}${window.location.pathname}?claim=${claim.claimId}`;
+    const shareText = `${claim.title}\nAyudanos adhiriendo a este reclamo ciudadano.\n${shareUrl}`;
     html += `
         <div class="detail-card">
             <div class="detail-label">Compartir</div>
@@ -541,7 +623,7 @@ function globalOpenDetailWindow(fbId) {
 }
 
 function shareClaimOn(platform, title, url) {
-    const msg = `🚨 Reclamo: ${title}`;
+    const msg = `${title}. Ayudanos adhiriendo a este reclamo ciudadano.`;
     let shareUrl = '';
 
     switch(platform) {
@@ -582,16 +664,17 @@ function renderPublicClaimsList() {
     document.getElementById('claimCounter').textContent = approved.length;
 
     const html = approved.map((claim) => {
-        const cat = CATEGORIES[claim.category] || { icon: '🚧', label: 'Reclamo' };
+        const cat = CATEGORIES[claim.category] || { label: 'Reclamo' };
         const priorityLabel = getPriorityLabel(claim.adhesions || 0);
+        const locText = claim.address || `${claim.lat?.toFixed(4)}, ${claim.lng?.toFixed(4)}` || 'Ubicación registrada';
         return `
             <div class="claim-item" onclick="globalOpenDetailWindow('${claim._fbId}')">
                 <div class="claim-item-header">
                     <span class="claim-item-id">${claim.claimId}</span>
                     <span class="claim-item-status">${priorityLabel}</span>
                 </div>
-                <div class="claim-item-name">${cat.icon} ${claim.title || claim.claimId}</div>
-                <div class="claim-item-desc">${claim.address || claim.description?.substring(0, 55) || 'Ubicación registrada'}...</div>
+                <div class="claim-item-name">${claim.title || claim.claimId}</div>
+                <div class="claim-item-desc">${locText}...</div>
             </div>
         `;
     }).join('');
@@ -662,12 +745,22 @@ function syncAdminDashboard() {
 function renderAdminViewCards(section) {
     const targets = state.claims.filter(c => c.status === section);
     const html = targets.map((claim) => {
-        const cat = CATEGORIES[claim.category] || { icon: '🚧', label: 'Reclamo' };
+        const cat = CATEGORIES[claim.category] || { label: 'Reclamo' };
+        const priorityLabel = getPriorityLabel(claim.adhesions || 0);
+        const createdDate = new Date(claim.createdAt).toLocaleDateString('es-AR');
         return `
             <div class="admin-card">
                 <div class="admin-card-id">${claim.claimId}</div>
-                <div class="admin-card-name">${cat.icon} por ${claim.name}</div>
-                <div class="admin-card-text">"${claim.description?.substring(0, 80) || claim.title || claim.claimId}..."</div>
+                <div class="admin-card-name">${claim.title || claim.claimId}</div>
+                <div class="admin-card-text">"${claim.description?.substring(0, 60) || claim.address || 'Sin descripción'}..."</div>
+                <div class="admin-card-meta">
+                    <span class="admin-card-badge" style="background:#f3f4f6; color:#374151;">Categoría: ${cat.label}</span>
+                </div>
+                <div class="admin-card-meta">
+                    <span class="admin-card-badge" style="background:#fef3c7; color:#92400e;">Prioridad: ${priorityLabel}</span>
+                    <span class="admin-card-badge" style="background:#dbeafe; color:#1e40af;">${claim.adhesions || 0} adhesiones</span>
+                </div>
+                <div class="admin-card-meta">Creado: ${createdDate} | Autor: ${claim.name}</div>
                 <button class="btn-popup-more" onclick="globalOpenDetailWindow('${claim._fbId}')">Inspeccionar</button>
             </div>
         `;

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <style>
+      .red-circle { fill: #f87171; }
+      .red-border { fill: none; stroke: #ef4444; stroke-width: 2; }
+    </style>
+  </defs>
+  <circle class="red-circle" cx="50" cy="50" r="45"/>
+  <circle class="red-border" cx="50" cy="50" r="45"/>
+</svg>

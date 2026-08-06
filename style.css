@@ -186,6 +186,12 @@ html, body {
     box-shadow: 0 0 0 3px var(--primary);
 }
 
+.filter-icon {
+    width: 24px;
+    height: 24px;
+    fill: currentColor;
+}
+
 /* ==================== BURBUJA FLOTANTE DE RECIENTES ==================== */
 .recent-claims-trigger {
     position: absolute;
@@ -356,7 +362,7 @@ html, body {
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 2000;
+    z-index: 2500;
 }
 
 .modal.hidden { display: none; }
@@ -371,6 +377,8 @@ html, body {
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    position: relative;
+    z-index: 2500;
 }
 
 .modal-header {
@@ -461,7 +469,11 @@ html, body {
     border-color: var(--dark);
 }
 
-.cat-icon { font-size: 20px; }
+.cat-icon { 
+    width: 32px;
+    height: 32px;
+    fill: currentColor;
+}
 
 .cat-label { font-size: 11px; font-weight: 600; }
 
@@ -536,14 +548,19 @@ html, body {
     height: 100vh;
     background: #fff;
     box-shadow: -10px 0 30px rgba(0,0,0,0.1);
-    z-index: 3000;
+    z-index: 5000;
     display: flex;
     flex-direction: column;
     transform: translateX(100%);
     transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow: hidden;
+    pointer-events: auto;
 }
 
-.detail-panel.visible { transform: translateX(0); }
+.detail-panel.visible { 
+    transform: translateX(0);
+    pointer-events: auto;
+}
 
 .detail-header {
     padding: 16px 20px;
@@ -552,6 +569,8 @@ html, body {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    flex-shrink: 0;
+    z-index: 5001;
 }
 
 .detail-header h2 { font-size: 15px; font-weight: 800; }
@@ -564,6 +583,7 @@ html, body {
     flex-direction: column;
     gap: 12px;
     background: #f8fafc;
+    z-index: 5000;
 }
 
 .detail-card {
@@ -725,10 +745,11 @@ html, body {
     right: 0;
     bottom: 0;
     background: #f1f5f9;
-    z-index: 5000;
+    z-index: 4000;
     display: flex;
     flex-direction: column;
     min-height: 100vh;
+    pointer-events: auto;
 }
 
 .admin-panel.hidden { display: none; }
@@ -843,6 +864,9 @@ html, body {
 .admin-card-id { font-size: 10px; font-weight: 700; color: var(--text-muted); }
 .admin-card-name { font-weight: 700; font-size: 13px; margin: 2px 0; color: var(--dark); }
 .admin-card-text { font-size: 12px; color: #475569; margin-bottom: 8px; line-height: 1.4; }
+.admin-card-meta { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
+.admin-card-badge { display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; margin-right: 4px; margin-bottom: 4px; }
+.admin-card-icon { width: 16px; height: 16px; display: inline-block; margin-right: 2px; vertical-align: middle; }
 .btn-popup-more {
     display: block;
     width: 100%;
@@ -983,7 +1007,7 @@ html, body {
 
     .recent-claims-popup { width: calc(100% - 20px); left: 10px; bottom: 65px; max-height: 260px; }
 
-    .detail-panel { width: 100%; z-index: 99999; }
+    .detail-panel { width: 100%; z-index: 5000; }
 
     .modal-content { width: 95%; max-width: 500px; }
 

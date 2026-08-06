@@ -37,13 +37,13 @@
                 <div id="map"></div>
 
                 <div class="category-filter-bar" id="categoryFilterBar">
-                    <button class="filter-btn active" data-cat="all" title="Ver todos">👁️</button>
-                    <button class="filter-btn" data-cat="plazas" title="Parques / Paseos / Plazas">🌳</button>
-                    <button class="filter-btn" data-cat="salud" title="Salud">🏥</button>
-                    <button class="filter-btn" data-cat="alumbrado" title="Alumbrado">💡</button>
-                    <button class="filter-btn" data-cat="calle" title="Bache / Calle / Camino">🕳️</button>
-                    <button class="filter-btn" data-cat="basura" title="Basura">🚮</button>
-                    <button class="filter-btn" data-cat="otro" title="Otros">🚧</button>
+                    <button class="filter-btn active" data-cat="all" title="Ver todos"><svg class="filter-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4.5C7.305 4.5 3.6 7.305 3.6 10.8c0 3.495 3.705 6.3 8.4 6.3s8.4-2.805 8.4-6.3c0-3.495-3.705-6.3-8.4-6.3zm0 11.4c-2.79 0-5.04-1.845-5.04-4.2s2.25-4.2 5.04-4.2 5.04 1.845 5.04 4.2-2.25 4.2-5.04 4.2z"/><circle cx="12" cy="10.8" r="1.5"/></svg></button>
+                    <button class="filter-btn" data-cat="plazas" title="Parques / Paseos / Plazas"><svg class="filter-icon" viewBox="0 0 1000 1000"><use href="arboles.svg#Capa_1"></use></svg></button>
+                    <button class="filter-btn" data-cat="salud" title="Salud"><svg class="filter-icon" viewBox="0 0 1000 1000"><use href="salud.svg#Capa_1"></use></svg></button>
+                    <button class="filter-btn" data-cat="alumbrado" title="Alumbrado"><svg class="filter-icon" viewBox="0 0 1000 1000"><use href="Alumbrado.svg#Capa_1"></use></svg></button>
+                    <button class="filter-btn" data-cat="calle" title="Bache / Calle / Camino"><svg class="filter-icon" viewBox="0 0 1000 1000"><use href="bache.svg#Capa_1"></use></svg></button>
+                    <button class="filter-btn" data-cat="basura" title="Basura"><svg class="filter-icon" viewBox="0 0 1000 1000"><use href="Basura.svg#Capa_1"></use></svg></button>
+                    <button class="filter-btn" data-cat="otro" title="Otros"><svg class="filter-icon" viewBox="0 0 1000 1000"><use href="otros.svg#Capa_1"></use></svg></button>
                 </div>
 
                 <div class="recent-claims-trigger" id="recentClaimsTrigger">
@@ -108,27 +108,27 @@
                     <h3>2. Categoría</h3>
                     <div class="category-grid" id="categoryGrid">
                         <div class="category-option" data-value="plazas">
-                            <span class="cat-icon">🌳</span>
+                            <svg class="cat-icon" viewBox="0 0 1000 1000"><use href="arboles.svg#Capa_1"></use></svg>
                             <span class="cat-label">Parques/Paseos/Plazas</span>
                         </div>
                         <div class="category-option" data-value="salud">
-                            <span class="cat-icon">🏥</span>
+                            <svg class="cat-icon" viewBox="0 0 1000 1000"><use href="salud.svg#Capa_1"></use></svg>
                             <span class="cat-label">Salud</span>
                         </div>
                         <div class="category-option" data-value="alumbrado">
-                            <span class="cat-icon">💡</span>
+                            <svg class="cat-icon" viewBox="0 0 1000 1000"><use href="Alumbrado.svg#Capa_1"></use></svg>
                             <span class="cat-label">Alumbrado</span>
                         </div>
                         <div class="category-option" data-value="calle">
-                            <span class="cat-icon">🕳️</span>
+                            <svg class="cat-icon" viewBox="0 0 1000 1000"><use href="bache.svg#Capa_1"></use></svg>
                             <span class="cat-label">Bache/Calle/Camino</span>
                         </div>
                         <div class="category-option" data-value="basura">
-                            <span class="cat-icon">🚮</span>
+                            <svg class="cat-icon" viewBox="0 0 1000 1000"><use href="Basura.svg#Capa_1"></use></svg>
                             <span class="cat-label">Basura</span>
                         </div>
                         <div class="category-option" data-value="otro">
-                            <span class="cat-icon">🚧</span>
+                            <svg class="cat-icon" viewBox="0 0 1000 1000"><use href="otros.svg#Capa_1"></use></svg>
                             <span class="cat-label">Otros</span>
                         </div>
                     </div>
@@ -136,10 +136,13 @@
 
                 <div class="form-section">
                     <h3>3. Ubicación</h3>
-                    <button type="button" id="useGPS" class="btn-location">📍 Capturar por GPS</button>
-                    <div style="text-align:center; margin:8px 0; font-size:11px; color:#64748b; font-weight: 600;">O REGISTRA DIRECCIÓN MANUAL</div>
-                    <input type="text" id="claimAddress" placeholder="Ej: Rivadavia 2800" class="input-field">
-                    <div id="locationDisplay" style="display:none; font-size:12px; color:#10b981; font-weight:600; text-align:center;"></div>
+                    <div style="display: flex; gap: 8px; margin-bottom: 10px;">
+                        <button type="button" id="useGPS" class="btn-location" style="flex: 1;">📍 Estoy en el lugar</button>
+                        <button type="button" id="useMapClick" class="btn-location" style="flex: 1; background: #8b5cf6;">📍 Señalar en mapa</button>
+                    </div>
+                    <div id="locationDisplay" style="display:none; font-size:12px; color:#10b981; font-weight:600; text-align:center; padding: 8px; background: #f0fdf4; border-radius: 6px; margin-bottom: 8px;"></div>
+                    <div style="font-size: 10px; color: #64748b; font-weight: 600; margin-bottom: 8px; padding: 8px; background: #f0f4f8; border-radius: 6px; text-align: center;">Detalles de ubicación (opcional)</div>
+                    <input type="text" id="claimAddress" placeholder="Ej: Rivadavia 2800 - ℹ Referencia (opcional - no se usa para ubicar)" class="input-field">
                 </div>
 
                 <div class="form-section">
