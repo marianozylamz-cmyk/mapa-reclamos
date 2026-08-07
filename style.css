@@ -191,6 +191,9 @@ html, body {
     height: 24px;
     fill: currentColor;
 }
+.filter-btn.active img.filter-icon {
+    filter: brightness(0) invert(1);
+}
 
 /* ==================== BURBUJA FLOTANTE DE RECIENTES ==================== */
 .recent-claims-trigger {
