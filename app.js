@@ -432,9 +432,15 @@ function getPriorityLabel(adhesions) {
 }
 
 function getPrioritySvg(adhesions) {
-    if (adhesions >= 20) return '<img src="priority-red.svg" class="priority-icon" alt="Urgente">';
-    if (adhesions >= 10) return '<img src="priority-orange.svg" class="priority-icon" alt="Prioritario">';
-    return '<img src="priority-yellow.svg" class="priority-icon" alt="Normal">';
+    if (adhesions >= 20) {
+        return '<img src="cono-rojo.png" class="priority-icon" alt="Urgente">';
+    }
+
+    if (adhesions >= 10) {
+        return '<img src="cono-naranja.png" class="priority-icon" alt="Prioritario">';
+    }
+
+    return '<img src="cono-amarillo.png" class="priority-icon" alt="Normal">';
 }
 
 async function addAdhesion(claimId) {
