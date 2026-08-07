@@ -98,7 +98,7 @@
                 <h2>Reportar Incidente</h2>
                 <button id="closeModal" class="btn-close">×</button>
             </div>
-            <div class="modal-body">
+           <div class="modal-body">
                 <div class="form-section">
                     <h3>1. Título del Reclamo</h3>
                     <input type="text" id="claimTitle" placeholder="Ej: Bache en Alsina, Árbol caído, Luminaria rota..." class="input-field">
@@ -108,27 +108,27 @@
                     <h3>2. Categoría</h3>
                     <div class="category-grid" id="categoryGrid">
                         <div class="category-option" data-value="plazas">
-                            <svg class="cat-icon" viewBox="0 0 1000 1000"><use href="arboles.svg#Capa_1"></use></svg>
+                            <img class="cat-icon" src="arboles.svg" alt="Parques">
                             <span class="cat-label">Parques/Paseos/Plazas</span>
                         </div>
                         <div class="category-option" data-value="salud">
-                            <svg class="cat-icon" viewBox="0 0 1000 1000"><use href="salud.svg#Capa_1"></use></svg>
+                            <img class="cat-icon" src="salud.svg" alt="Salud">
                             <span class="cat-label">Salud</span>
                         </div>
                         <div class="category-option" data-value="alumbrado">
-                            <svg class="cat-icon" viewBox="0 0 1000 1000"><use href="Alumbrado.svg#Capa_1"></use></svg>
+                            <img class="cat-icon" src="Alumbrado.svg" alt="Alumbrado">
                             <span class="cat-label">Alumbrado</span>
                         </div>
                         <div class="category-option" data-value="calle">
-                            <svg class="cat-icon" viewBox="0 0 1000 1000"><use href="bache.svg#Capa_1"></use></svg>
+                            <img class="cat-icon" src="bache.svg" alt="Bache/Calle">
                             <span class="cat-label">Bache/Calle/Camino</span>
                         </div>
                         <div class="category-option" data-value="basura">
-                            <svg class="cat-icon" viewBox="0 0 1000 1000"><use href="Basura.svg#Capa_1"></use></svg>
+                            <img class="cat-icon" src="Basura.svg" alt="Basura">
                             <span class="cat-label">Basura</span>
                         </div>
                         <div class="category-option" data-value="otro">
-                            <svg class="cat-icon" viewBox="0 0 1000 1000"><use href="otros.svg#Capa_1"></use></svg>
+                            <img class="cat-icon" src="otros.svg" alt="Otros">
                             <span class="cat-label">Otros</span>
                         </div>
                     </div>
@@ -137,10 +137,10 @@
                 <div class="form-section">
                     <h3>3. Ubicación</h3>
                     <div style="display: flex; gap: 8px; margin-bottom: 10px;">
-                        <button type="button" id="useGPS" class="btn-location" style="flex: 1;">📍 Estoy en el lugar</button>
+                        <button type="button" id="useGPS" class="btn-location" style="flex: 1;">📍 Capturar por GPS</button>
                         <button type="button" id="useMapClick" class="btn-location" style="flex: 1; background: #8b5cf6;">📍 Señalar en mapa</button>
                     </div>
-                    <div id="locationDisplay" style="display:none; font-size:12px; color:#10b981; font-weight:600; text-align:center; padding: 8px; background: #f0fdf4; border-radius: 6px; margin-bottom: 8px;"></div>
+                    <div id="locationDisplay" style="display: block; font-size: 12px; color: rgb(16, 185, 129); font-weight: 600; text-align: center; padding: 8px; background: rgb(240, 253, 244); border-radius: 6px; margin-bottom: 8px;">✅ Ubicación: -36.8926, -60.3206</div>
                     <div style="font-size: 10px; color: #64748b; font-weight: 600; margin-bottom: 8px; padding: 8px; background: #f0f4f8; border-radius: 6px; text-align: center;">Detalles de ubicación (opcional)</div>
                     <input type="text" id="claimAddress" placeholder="Ej: Rivadavia 2800 - ℹ Referencia (opcional - no se usa para ubicar)" class="input-field">
                 </div>
@@ -152,14 +152,14 @@
 
                 <div class="form-section">
                     <h3>5. Imagen (Opcional)</h3>
-                    <div id="photoDropZone" class="photo-zone">
+                    <div id="photoDropZone" class="photo-zone" style="display: block;">
                         <input type="file" id="claimPhoto" accept="image/*" style="display:none;">
                         <span style="font-size:30px;">📸</span>
                         <p style="font-size:13px; font-weight:700; margin-top:4px; color: var(--text-main);">Cargar imagen</p>
                         <span style="font-size:10px; color:var(--text-muted);">Máximo 5MB</span>
                     </div>
-                    <div id="photoPreview" style="display:none; text-align:center;">
-                        <div class="photo-preview"><img id="photoImg" alt="Preview"></div>
+                    <div id="photoPreview" style="display: none; text-align: center;">
+                        <div class="photo-preview"><img id="photoImg" alt="Preview" src=""></div>
                         <button type="button" id="removePhoto" class="btn-secondary" style="padding:4px 10px; font-size:11px; margin-top:6px;">Quitar foto</button>
                     </div>
                 </div>
@@ -171,7 +171,7 @@
                     <input type="tel" id="claimPhone" placeholder="Teléfono (Ej: 2284123456)" class="input-field">
                 </div>
 
-                <div id="formMessage" class="form-message"></div>
+                <div id="formMessage" class="form-message" style="background: rgb(220, 252, 231); color: rgb(21, 128, 61); display: none;">✅ Reclamo enviado correctamente</div>
             </div>
             <div class="modal-footer">
                 <button id="submitBtn" class="btn-success">Enviar Reporte</button>
