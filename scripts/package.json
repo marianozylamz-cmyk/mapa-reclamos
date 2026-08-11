@@ -1,0 +1,9 @@
+{
+  "name": "mapa-reclamos-scripts",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Scripts de un solo uso para administrar el proyecto Firebase de arreglenesto.com.ar. No forma parte del sitio, no se despliega a Vercel.",
+  "dependencies": {
+    "firebase-admin": "^12.1.0"
+  }
+}

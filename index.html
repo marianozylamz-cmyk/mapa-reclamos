@@ -6,6 +6,8 @@
     <title>Mapa de Reclamos - Olavarría</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%23FFD23F'/><circle cx='50' cy='50' r='40' fill='%23FF932B'/><circle cx='50' cy='50' r='32' fill='%23FA582C'/></svg>">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -21,7 +23,7 @@
     <div id="mainPage" class="main-page">
         <header class="top-header">
             <div class="header-left">
-                <img src="456193182_1050157173398567_6145674300254296172_n.png" alt="Logo" class="site-logo">
+                <img src="logo2.png" alt="Logo" class="site-logo">
                 <div class="header-titles">
                     <h1>MAPA DE RECLAMOS Y DENUNCIAS <span>CIUDADANAS</span></h1>
                     <p class="header-subtitle">Plataforma participativa para reportar problemas de infraestructura. Un espacio donde los vecinos impulsan soluciones juntos por Olavarría.</p>
@@ -58,14 +60,12 @@
                     <div class="recent-popup-body" id="claimsList"></div>
                 </div>
 
-                <div id="mapClickOverlay" class="map-click-overlay hidden">
-                    <div class="map-click-modal">
-                        <h3>Crear reclamo en esta ubicación</h3>
-                        <p id="clickCoords"></p>
-                        <button id="confirmMapClick" class="btn-confirm">Crear reclamo aquí</button>
-                        <button id="cancelMapClick" class="btn-cancel">Cancelar</button>
-                    </div>
-                </div>
+               <div id="mapClickOverlay" class="map-click-overlay hidden"></div>
+
+<div id="mapClickBanner" class="map-click-banner hidden">
+    <span>👆 Haz click en el mapa para señalar la ubicación</span>
+    <button id="cancelMapClickBanner" style="background:none; border:none; color:#fff; font-size:18px; cursor:pointer;">×</button>
+</div>
             </div>
         </div>
 
@@ -99,83 +99,93 @@
                 <button id="closeModal" class="btn-close">×</button>
             </div>
            <div class="modal-body">
-                <div class="form-section">
-                    <h3>1. Título del Reclamo</h3>
-                    <input type="text" id="claimTitle" placeholder="Ej: Bache en Alsina, Árbol caído, Luminaria rota..." class="input-field">
-                </div>
+                <div id="claimFormBody">
+                    <div class="form-section">
+                        <h3>1. Título del Reclamo</h3>
+                        <input type="text" id="claimTitle" placeholder="Ej: Bache en Alsina, Árbol caído, Luminaria rota..." class="input-field">
+                    </div>
 
-                <div class="form-section">
-                    <h3>2. Categoría</h3>
-                    <div class="category-grid" id="categoryGrid">
-                        <div class="category-option" data-value="plazas">
-                            <img class="cat-icon" src="arboles.svg" alt="Parques">
-                            <span class="cat-label">Parques/Paseos/Plazas</span>
-                        </div>
-                        <div class="category-option" data-value="salud">
-                            <img class="cat-icon" src="salud.svg" alt="Salud">
-                            <span class="cat-label">Salud</span>
-                        </div>
-                        <div class="category-option" data-value="alumbrado">
-                            <img class="cat-icon" src="Alumbrado.svg" alt="Alumbrado">
-                            <span class="cat-label">Alumbrado</span>
-                        </div>
-                        <div class="category-option" data-value="calle">
-                            <img class="cat-icon" src="bache.svg" alt="Bache/Calle">
-                            <span class="cat-label">Bache/Calle/Camino</span>
-                        </div>
-                        <div class="category-option" data-value="basura">
-                            <img class="cat-icon" src="Basura.svg" alt="Basura">
-                            <span class="cat-label">Basura</span>
-                        </div>
-                        <div class="category-option" data-value="otro">
-                            <img class="cat-icon" src="otros.svg" alt="Otros">
-                            <span class="cat-label">Otros</span>
+                    <div class="form-section">
+                        <h3>2. Categoría</h3>
+                        <div class="category-grid" id="categoryGrid">
+                            <div class="category-option" data-value="plazas">
+                                <img class="cat-icon" src="arboles.svg" alt="Parques">
+                                <span class="cat-label">Parques/Paseos/Plazas</span>
+                            </div>
+                            <div class="category-option" data-value="salud">
+                                <img class="cat-icon" src="salud.svg" alt="Salud">
+                                <span class="cat-label">Salud</span>
+                            </div>
+                            <div class="category-option" data-value="alumbrado">
+                                <img class="cat-icon" src="Alumbrado.svg" alt="Alumbrado">
+                                <span class="cat-label">Alumbrado</span>
+                            </div>
+                            <div class="category-option" data-value="calle">
+                                <img class="cat-icon" src="bache.svg" alt="Bache/Calle">
+                                <span class="cat-label">Bache/Calle/Camino</span>
+                            </div>
+                            <div class="category-option" data-value="basura">
+                                <img class="cat-icon" src="Basura.svg" alt="Basura">
+                                <span class="cat-label">Basura</span>
+                            </div>
+                            <div class="category-option" data-value="otro">
+                                <img class="cat-icon" src="otros.svg" alt="Otros">
+                                <span class="cat-label">Otros</span>
+                            </div>
                         </div>
                     </div>
-                </div>
 
-                <div class="form-section">
-                    <h3>3. Ubicación</h3>
-                    <div style="display: flex; gap: 8px; margin-bottom: 10px;">
-                        <button type="button" id="useGPS" class="btn-location" style="flex: 1;">📍 Capturar por GPS</button>
-                        <button type="button" id="useMapClick" class="btn-location" style="flex: 1; background: #8b5cf6;">📍 Señalar en mapa</button>
+                    <div class="form-section">
+                        <h3>3. Ubicación</h3>
+                        <div style="display: flex; gap: 8px; margin-bottom: 10px;">
+                            <button type="button" id="useGPS" class="btn-location" style="flex: 1;">📍 Capturar por GPS</button>
+                            <button type="button" id="useMapClick" class="btn-location" style="flex: 1; background: #8b5cf6;">📍 Señalar en mapa</button>
+                        </div>
+                        <div id="locationDisplay" style="display: block; font-size: 12px; color: rgb(16, 185, 129); font-weight: 600; text-align: center; padding: 8px; background: rgb(240, 253, 244); border-radius: 6px; margin-bottom: 8px;">✅ Ubicación: -36.8926, -60.3206</div>
+                        <div style="font-size: 10px; color: #64748b; font-weight: 600; margin-bottom: 8px; padding: 8px; background: #f0f4f8; border-radius: 6px; text-align: center;">Detalles de ubicación (opcional)</div>
+                        <input type="text" id="claimAddress" placeholder="Ej: Rivadavia 2800 - ℹ Referencia (opcional - no se usa para ubicar)" class="input-field">
                     </div>
-                    <div id="locationDisplay" style="display: block; font-size: 12px; color: rgb(16, 185, 129); font-weight: 600; text-align: center; padding: 8px; background: rgb(240, 253, 244); border-radius: 6px; margin-bottom: 8px;">✅ Ubicación: -36.8926, -60.3206</div>
-                    <div style="font-size: 10px; color: #64748b; font-weight: 600; margin-bottom: 8px; padding: 8px; background: #f0f4f8; border-radius: 6px; text-align: center;">Detalles de ubicación (opcional)</div>
-                    <input type="text" id="claimAddress" placeholder="Ej: Rivadavia 2800 - ℹ Referencia (opcional - no se usa para ubicar)" class="input-field">
-                </div>
 
-                <div class="form-section">
-                    <h3>4. Descripción (Opcional)</h3>
-                    <textarea id="claimDescription" placeholder="Contanos más detalles..." class="input-field" style="min-height:80px; resize:none;"></textarea>
-                </div>
-
-                <div class="form-section">
-                    <h3>5. Imagen (Opcional)</h3>
-                    <div id="photoDropZone" class="photo-zone" style="display: block;">
-                        <input type="file" id="claimPhoto" accept="image/*" style="display:none;">
-                        <span style="font-size:30px;">📸</span>
-                        <p style="font-size:13px; font-weight:700; margin-top:4px; color: var(--text-main);">Cargar imagen</p>
-                        <span style="font-size:10px; color:var(--text-muted);">Máximo 5MB</span>
+                    <div class="form-section">
+                        <h3>4. Descripción (Opcional)</h3>
+                        <textarea id="claimDescription" placeholder="Contanos más detalles..." class="input-field" style="min-height:80px; resize:none;"></textarea>
                     </div>
-                    <div id="photoPreview" style="display: none; text-align: center;">
-                        <div class="photo-preview"><img id="photoImg" alt="Preview" src=""></div>
-                        <button type="button" id="removePhoto" class="btn-secondary" style="padding:4px 10px; font-size:11px; margin-top:6px;">Quitar foto</button>
+
+                    <div class="form-section">
+                        <h3>5. Imagen (Opcional)</h3>
+                        <div id="photoDropZone" class="photo-zone" style="display: block;">
+                            <input type="file" id="claimPhoto" accept="image/*" style="display:none;">
+                            <span id="photoDropIcon" style="font-size:30px;">📸</span>
+                            <p id="photoDropLabel" style="font-size:13px; font-weight:700; margin-top:4px; color: var(--text-main);">Cargar imagen</p>
+                        </div>
+                        <div id="photoPreview" style="display: none; text-align: center;">
+                            <div class="photo-preview"><img id="photoImg" alt="Preview" src=""></div>
+                            <button type="button" id="removePhoto" class="btn-secondary" style="padding:4px 10px; font-size:11px; margin-top:6px;">Quitar foto</button>
+                        </div>
                     </div>
+
+                    <div class="form-section">
+                        <h3>6. Tus Datos</h3>
+                        <p style="font-size:12px; color:#64748b; margin-bottom:10px;">Dejanos tus datos para mantenerte informado sobre novedades de tu reclamo</p>
+                        <input type="text" id="claimName" placeholder="Tu nombre" class="input-field">
+<input type="tel" id="claimPhone" placeholder="Teléfono (Ej: 2284123456)" class="input-field">
+                    </div>
+
+                    <div id="formMessage" class="form-message" style="background: rgb(220, 252, 231); color: rgb(21, 128, 61); display: none;">✅ Reclamo enviado correctamente</div>
                 </div>
 
-                <div class="form-section">
-                    <h3>6. Tus Datos</h3>
-                    <p style="font-size:12px; color:#64748b; margin-bottom:10px;">Dejanos tus datos para mantenerte informado sobre novedades de tu reclamo</p>
-                    <input type="text" id="claimName" placeholder="Tu nombre" class="input-field">
-                    <input type="tel" id="claimPhone" placeholder="Teléfono (Ej: 2284123456)" class="input-field">
+                <div id="formSuccessView" style="display:none; text-align:center; padding: 34px 10px;">
+                    <div style="font-size:52px; margin-bottom:14px;">✅</div>
+                    <h3 style="margin-bottom:10px; color:#15803d; font-size:18px;">¡Reclamo enviado!</h3>
+                    <p style="color:#475569; font-size:14px; line-height:1.6; max-width:320px; margin:0 auto;">
+                        Tu reporte ya está guardado. Lo vas a ver marcado <strong>en gris en el mapa</strong> mientras esté pendiente de revisión, y va a pasar a color una vez que un administrador lo apruebe.
+                    </p>
                 </div>
-
-                <div id="formMessage" class="form-message" style="background: rgb(220, 252, 231); color: rgb(21, 128, 61); display: none;">✅ Reclamo enviado correctamente</div>
             </div>
             <div class="modal-footer">
                 <button id="submitBtn" class="btn-success">Enviar Reporte</button>
                 <button id="closeModalBtn" class="btn-secondary">Cancelar</button>
+                <button id="successCloseBtn" class="btn-success" style="display:none;">Entendido</button>
             </div>
         </div>
     </div>
@@ -186,7 +196,34 @@
             <button id="closeDetail" class="btn-close">×</button>
         </div>
         <div class="detail-body" id="detailBody"></div>
+     <div id="detailEditForm" style="display:none; padding:20px; background:#f8fafc; border-top:1px solid #e2e8f0; flex-shrink:0; overflow-y:auto; max-height:50vh;">
+    <h4 style="font-size:13px; font-weight:700; margin-bottom:12px; color:var(--dark);">Editar reclamo</h4>
+    <div class="form-section">
+        <label style="font-size:11px; font-weight:700; color:var(--text-muted);">Descripción</label>
+        <textarea id="editClaimDescription" class="input-field" style="font-size:12px; min-height:60px; resize:none;"></textarea>
     </div>
+    <div class="form-section">
+        <label style="font-size:11px; font-weight:700; color:var(--text-muted);">Dirección / Referencia</label>
+        <input type="text" id="editClaimAddress" class="input-field" style="font-size:12px;" placeholder="Ej: Rivadavia 2800">
+    </div>
+    <div class="form-section">
+        <label style="font-size:11px; font-weight:700; color:var(--text-muted);">Categoría</label>
+        <select id="editClaimCategory" class="input-field" style="font-size:12px;">
+            <option value="plazas">Parques/Paseos/Plazas</option>
+            <option value="salud">Salud</option>
+            <option value="alumbrado">Alumbrado</option>
+            <option value="calle">Bache/Calle/Camino</option>
+            <option value="basura">Basura</option>
+            <option value="otro">Otros</option>
+        </select>
+    </div>
+    <div style="display:flex; gap:8px; margin-top:12px;">
+        <button id="saveEditBtn" class="btn-success" style="flex:1; padding:8px; font-size:11px;">Guardar</button>
+        <button id="cancelEditBtn" class="btn-secondary" style="flex:1; padding:8px; font-size:11px;">Cancelar</button>
+    </div>
+</div>
+    </div>
+
 
     <div id="adhesionModal" class="modal hidden">
         <div class="modal-content modal-adhesion">
@@ -205,7 +242,6 @@
         </div>
     </div>
 
-    <!-- NUEVO: modal de login admin. Reemplaza al prompt() con la clave hardcodeada. -->
     <div id="adminLoginModal" class="modal hidden">
         <div class="modal-content" style="max-width:340px;">
             <div class="modal-header">
@@ -296,6 +332,7 @@
     </script>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

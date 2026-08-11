@@ -17,10 +17,12 @@ const CATEGORIES = {
 };
 
 const state = {
-    claims: [],       // datos públicos (colección reclamos_publicos) - sin teléfono, solo aprobados/solucionados
-    adminClaims: [],  // datos completos (colección reclamos) - solo se cargan si sos admin
+    claims: [],               // datos públicos (reclamos_publicos) - aprobados/solucionados
+    adminClaims: [],          // datos completos (reclamos) - solo si sos admin
+    mySessionPendingClaims: [], // reclamos pendientes cargados por VOS en esta sesión (en memoria, se pierde al recargar)
     map: null,
-    markers: [],
+    clusterGroup: null,       // agrupa los pines aprobados
+    markers: [],              // pines pendientes en gris (sueltos, sin clusterizar)
     isAdmin: false,
     selectedCategory: null,
     currentLocation: null,
@@ -40,7 +42,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 // ---------------------------------------------------------------------------
-// AUTENTICACIÓN ADMIN (Firebase Auth + Custom Claim, ya no hay clave hardcodeada)
+// AUTENTICACIÓN ADMIN
 // ---------------------------------------------------------------------------
 
 function initAuthListener() {
@@ -52,6 +54,7 @@ function initAuthListener() {
             state.adminClaims = [];
             document.getElementById('adminSessionBar').style.display = 'none';
             document.getElementById('adminPanel').classList.add('hidden');
+            if (state.map) renderMapPins();
             return;
         }
 
@@ -65,7 +68,6 @@ function initAuthListener() {
                 renderMapPins();
                 renderPublicClaimsList();
             } else {
-                // Se logueó con un usuario válido pero sin el custom claim admin.
                 state.isAdmin = false;
                 document.getElementById('adminSessionBar').style.display = 'none';
             }
@@ -120,7 +122,7 @@ async function handleAdminLogout() {
 }
 
 // ---------------------------------------------------------------------------
-// UTIL: escape de HTML para todo texto que viene del usuario (fix XSS)
+// UTIL
 // ---------------------------------------------------------------------------
 
 function escapeHtml(str) {
@@ -138,10 +140,10 @@ function findClaimById(fbId) {
         const fromAdmin = state.adminClaims.find(c => c._fbId === fbId);
         if (fromAdmin) return fromAdmin;
     }
+    const fromSession = state.mySessionPendingClaims.find(c => c._fbId === fbId);
+    if (fromSession) return fromSession;
     return state.claims.find(c => c._fbId === fbId);
 }
-
-// ---------------------------------------------------------------------------
 
 function handleDeepLinking() {
     const params = new URLSearchParams(window.location.search);
@@ -179,6 +181,35 @@ function initLeafletMap() {
                     [OLAVARRIA_BOUNDS.maxLat, OLAVARRIA_BOUNDS.maxLng]];
     L.rectangle(bounds, { color: '#cbd5e1', weight: 2, fillOpacity: 0.05, dashArray: '5, 5' }).addTo(state.map);
 
+    // Los reclamos aprobados van agrupados (clustering) para que no se amontonen
+    // en el mapa cuando hay muchos cerca. Ver leaflet.markercluster en index.html.
+   state.clusterGroup = L.markerClusterGroup({
+    maxClusterRadius: 50,
+    spiderfyOnMaxZoom: true,
+    showCoverageOnHover: false,
+    iconCreateFunction: function(cluster) {
+        const childCount = cluster.getChildCount();
+        const adhesions = Math.max(...cluster.getAllChildMarkers().map(m => {
+            const data = m.options.claimData;
+            return data ? (data.adhesions || 0) : 0;
+        }));
+        const priority = adhesions >= 20 ? 'urgente' : (adhesions >= 10 ? 'prioritario' : 'normal');
+        const coneImg = priority === 'urgente' ? 'cono-rojo.png' : (priority === 'prioritario' ? 'cono-naranja.png' : 'cono-amarillo.png');
+        
+        return L.divIcon({
+            html: `
+                <div style="position: relative; width: 42px; height: 42px;">
+                    <img src="${coneImg}" style="width: 42px; height: 42px; filter: drop-shadow(0 0 2px rgba(0,0,0,0.3));">
+                    <div style="position: absolute; bottom: -8px; right: -8px; background: #1e293b; color: white; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 11px; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">${childCount}</div>
+                </div>
+            `,
+            iconSize: [42, 42],
+            className: ''
+        });
+    }
+});
+    state.map.addLayer(state.clusterGroup);
+
     state.map.on('click', (e) => {
         const lat = e.latlng.lat;
         const lng = e.latlng.lng;
@@ -196,23 +227,62 @@ function initLeafletMap() {
 }
 
 function showMapClickModal(lat, lng) {
-    const indicator = document.getElementById('mapClickIndicator');
-    if (indicator) indicator.remove();
-
     const overlay = document.getElementById('mapClickOverlay');
-    document.getElementById('clickCoords').textContent = `📍 ${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+    const banner = document.getElementById('mapClickBanner');
+    
+    state.mapClickLocation = { lat, lng };
+    
+    // Agregar marcador visual temporal en el mapa
+    if (window.mapClickMarker) {
+        state.map.removeLayer(window.mapClickMarker);
+    }
+    
+    const icon = L.divIcon({
+        html: `<div style="width:20px; height:20px; border-radius:50%; background:#10b981; border:3px solid white; box-shadow:0 0 8px rgba(16,185,129,0.6);"></div>`,
+        iconSize: [26, 26],
+        className: ''
+    });
+    
+    window.mapClickMarker = L.marker([lat, lng], { icon }).addTo(state.map);
+    
     overlay.classList.remove('hidden');
+    banner.classList.remove('hidden');
 
-    document.getElementById('confirmMapClick').onclick = () => {
+    const confirmAction = () => {
         state.currentLocation = { lat, lng };
         overlay.classList.add('hidden');
-        openClaimModal();
+        banner.classList.add('hidden');
+        if (window.mapClickMarker) {
+            state.map.removeLayer(window.mapClickMarker);
+            window.mapClickMarker = null;
+        }
+        document.getElementById('claimModal').classList.remove('hidden');
+        showLocationDisplay();
     };
 
-    document.getElementById('cancelMapClick').onclick = () => {
+    document.getElementById('cancelMapClickBanner').onclick = () => {
         overlay.classList.add('hidden');
+        banner.classList.add('hidden');
+        if (window.mapClickMarker) {
+            state.map.removeLayer(window.mapClickMarker);
+            window.mapClickMarker = null;
+        }
+        document.getElementById('claimModal').classList.remove('hidden');
         state.mapClickLocation = null;
     };
+
+    state.map.once('click', (e) => {
+        const newLat = e.latlng.lat;
+        const newLng = e.latlng.lng;
+
+        if (!isWithinOlavarria(newLat, newLng)) {
+            alert('⚠️ Solo puedes crear reclamos dentro del partido de Olavarría');
+            return;
+        }
+
+        state.mapClickLocation = { lat: newLat, lng: newLng };
+        confirmAction();
+    });
 }
 
 function setupApplicationEvents() {
@@ -225,6 +295,7 @@ function setupApplicationEvents() {
 
     document.getElementById('closeModal').addEventListener('click', closeClaimModal);
     document.getElementById('closeModalBtn').addEventListener('click', closeClaimModal);
+    document.getElementById('successCloseBtn').addEventListener('click', closeClaimModal);
     document.getElementById('closeDetail').addEventListener('click', () => {
         document.getElementById('detailPanel').classList.remove('visible');
     });
@@ -295,7 +366,6 @@ function setupApplicationEvents() {
         document.getElementById('adhesionModal').classList.add('hidden');
     });
 
-    // Login admin (reemplaza al prompt() con clave hardcodeada)
     document.getElementById('adminLoginBtn').addEventListener('click', handleAdminLogin);
     document.getElementById('cancelAdminLogin').addEventListener('click', () => {
         document.getElementById('adminLoginModal').classList.add('hidden');
@@ -333,29 +403,18 @@ function openMapClickModal() {
     const modal = document.getElementById('claimModal');
     modal.classList.add('hidden');
 
-    const indicator = document.createElement('div');
-    indicator.id = 'mapClickIndicator';
-    indicator.style.cssText = `
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        background: white;
-        padding: 24px;
-        border-radius: 12px;
-        box-shadow: 0 20px 25px rgba(0,0,0,0.3);
-        z-index: 6000;
-        text-align: center;
-        font-weight: 600;
-        color: #2d3135;
-    `;
-    indicator.innerHTML = `
-        <p style="font-size: 16px; margin-bottom: 12px;">👆 Haz click en el mapa</p>
-        <p style="font-size: 12px; color: #64748b;">Señala dónde está el problema</p>
-        <button onclick="document.getElementById('mapClickIndicator').remove(); document.getElementById('claimModal').classList.remove('hidden');"
-                style="margin-top: 12px; padding: 8px 16px; background: #e2e8f0; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">Cancelar</button>
-    `;
-    document.body.appendChild(indicator);
+    const overlay = document.getElementById('mapClickOverlay');
+    const banner = document.getElementById('mapClickBanner');
+    
+    overlay.classList.remove('hidden');
+    banner.classList.remove('hidden');
+
+    document.getElementById('cancelMapClickBanner').onclick = () => {
+        overlay.classList.add('hidden');
+        banner.classList.add('hidden');
+        modal.classList.remove('hidden');
+        state.mapClickLocation = null;
+    };
 }
 
 function closeClaimModal() {
@@ -366,6 +425,15 @@ function closeClaimModal() {
     state.selectedCategory = null;
     state.currentPhoto = null;
     document.getElementById('locationDisplay').style.display = 'none';
+    const overlay = document.getElementById('mapClickOverlay');
+    const banner = document.getElementById('mapClickBanner');
+    overlay.classList.add('hidden');
+    banner.classList.add('hidden');
+    if (window.mapClickMarker) {
+        state.map.removeLayer(window.mapClickMarker);
+        window.mapClickMarker = null;
+    }
+    resetFormState(false);
 }
 
 function resetFormState(preserveLocation = false) {
@@ -379,6 +447,14 @@ function resetFormState(preserveLocation = false) {
     document.querySelectorAll('#categoryGrid .category-option').forEach(o => o.classList.remove('selected'));
     document.getElementById('photoPreview').style.display = 'none';
     document.getElementById('photoDropZone').style.display = 'block';
+
+    // Volvemos a mostrar el formulario (por si veníamos de la pantalla de éxito)
+    document.getElementById('claimFormBody').style.display = '';
+    document.getElementById('formSuccessView').style.display = 'none';
+    document.getElementById('formMessage').style.display = 'none';
+    document.getElementById('submitBtn').style.display = '';
+    document.getElementById('closeModalBtn').style.display = '';
+    document.getElementById('successCloseBtn').style.display = 'none';
 
     state.selectedCategory = null;
     if (!preserveLocation) state.currentLocation = null;
@@ -422,23 +498,97 @@ function triggerGPSCapture() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// FOTOS — aceptamos cualquier tamaño real de foto de celular. La comprimimos
+// nosotros en el navegador (canvas) antes de guardarla, así siempre entra en
+// el límite de 1MB por documento que tiene Firestore. Nunca bloqueamos al
+// usuario por el peso del archivo original.
+// ---------------------------------------------------------------------------
+
 function processPhotoFile(e) {
     const file = e.target.files[0];
     if (!file) return;
 
-    if (file.size > 5 * 1024 * 1024) {
-        flashErrorMessage('La imagen debe ser menor a 5MB');
+    // Validar que sea imagen, no video
+    if (!file.type.startsWith('image/')) {
+        flashErrorMessage('Solo se aceptan imágenes. Por favor, sube una foto.');
         return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-        state.currentPhoto = event.target.result;
-        document.getElementById('photoImg').src = state.currentPhoto;
-        document.getElementById('photoDropZone').style.display = 'none';
-        document.getElementById('photoPreview').style.display = 'block';
-    };
-    reader.readAsDataURL(file);
+    // Validar tamaño máximo 5MB
+    if (file.size > 5 * 1024 * 1024) {
+        flashErrorMessage('La imagen pesa demasiado para subirla desde tu dispositivo');
+        return;
+    }
+
+    const dropIcon = document.getElementById('photoDropIcon');
+    const dropLabel = document.getElementById('photoDropLabel');
+    const dropHint = document.getElementById('photoDropHint');
+    const originalIcon = dropIcon.textContent;
+    const originalLabel = dropLabel.textContent;
+    const originalHint = dropHint.textContent;
+
+    dropIcon.textContent = '⏳';
+    dropLabel.textContent = 'Optimizando imagen...';
+    dropHint.textContent = 'Puede tardar unos segundos';
+
+    compressImage(file)
+        .then((dataUrl) => {
+            state.currentPhoto = dataUrl;
+            document.getElementById('photoImg').src = state.currentPhoto;
+            dropIcon.textContent = originalIcon;
+            dropLabel.textContent = originalLabel;
+            dropHint.textContent = originalHint;
+            document.getElementById('photoDropZone').style.display = 'none';
+            document.getElementById('photoPreview').style.display = 'block';
+        })
+        .catch((error) => {
+            console.error('Error procesando la imagen:', error);
+            dropIcon.textContent = originalIcon;
+            dropLabel.textContent = originalLabel;
+            dropHint.textContent = originalHint;
+            flashErrorMessage('No se pudo procesar esa imagen. Probá con otra foto.');
+        });
+}
+
+function compressImage(file, maxWidth = 1600) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+                let { width, height } = img;
+                if (width > maxWidth) {
+                    height = Math.round(height * (maxWidth / width));
+                    width = maxWidth;
+                }
+
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+
+                let quality = 0.75;
+                let dataUrl = canvas.toDataURL('image/jpeg', quality);
+
+                // Firestore tiene un límite de 1MB por documento. Bajamos calidad
+                // hasta que la foto entre cómoda, sin bloquear nunca al usuario
+                // por el tamaño del archivo original (puede ser 12MB de un iPhone,
+                // no importa: acá la reducimos igual).
+                while (dataUrl.length > 700 * 1024 && quality > 0.3) {
+                    quality -= 0.1;
+                    dataUrl = canvas.toDataURL('image/jpeg', quality);
+                }
+
+                resolve(dataUrl);
+            };
+            img.onerror = () => reject(new Error('No se pudo leer la imagen'));
+            img.src = e.target.result;
+        };
+        reader.onerror = () => reject(new Error('No se pudo leer el archivo'));
+        reader.readAsDataURL(file);
+    });
 }
 
 function clearPhotoEvidencia() {
@@ -449,7 +599,7 @@ function clearPhotoEvidencia() {
 }
 
 // ---------------------------------------------------------------------------
-// CREAR RECLAMO — con protección anti doble-submit (disabled + finally)
+// CREAR RECLAMO
 // ---------------------------------------------------------------------------
 
 async function executeSubmitForm() {
@@ -464,13 +614,11 @@ async function executeSubmitForm() {
     if (!category) return flashErrorMessage('Selecciona una categoría');
     if (!location) return flashErrorMessage('⚠️ Debes seleccionar ubicación: Usa GPS o señala en el mapa');
     if (!name) return flashErrorMessage('Ingresa tu nombre');
-    if (!phone) return flashErrorMessage('Ingresa tu teléfono');
-    if (!phone.startsWith('2284')) return flashErrorMessage('Teléfono debe empezar con 2284 (Olavarría)');
+    // Teléfono es opcional ahora
+    if (phone && !phone.startsWith('2284')) return flashErrorMessage('Si completas teléfono, debe empezar con 2284 (Olavarría)');
 
     const claimId = 'OLV-' + new Date().getFullYear() + '-' + Math.floor(Math.random() * 10000).toString().padStart(4, '0');
 
-    // Este shape tiene que coincidir con lo que exige firestore.rules en "allow create"
-    // de la colección "reclamos": status pending, adhesions 0, tipos correctos.
     const claimData = {
         id: Date.now(),
         claimId: claimId,
@@ -500,19 +648,28 @@ async function executeSubmitForm() {
         const docRef = await addDoc(collection(window.db, "reclamos"), claimData);
         claimData._fbId = docRef.id;
 
-        if (state.isAdmin) state.adminClaims.push(claimData);
+        if (state.isAdmin) {
+            state.adminClaims.push(claimData);
+            syncAdminDashboard();
+        } else {
+            // Se guarda SOLO en memoria de esta pestaña. Si la persona recarga
+            // o vuelve a entrar más tarde, este pin gris ya no va a aparecer
+            // (es intencional: es un "quedate tranquilo", no un tracking).
+            state.mySessionPendingClaims.push(claimData);
+        }
 
-        flashSuccessMessage('✅ Reclamo enviado correctamente. Va a aparecer en el mapa una vez revisado.');
+        renderMapPins();
+
+        // Pantalla de éxito clara en vez de un cartelito chico que desaparece solo.
+        document.getElementById('claimFormBody').style.display = 'none';
+        document.getElementById('formSuccessView').style.display = 'block';
+        document.getElementById('submitBtn').style.display = 'none';
+        document.getElementById('closeModalBtn').style.display = 'none';
+        document.getElementById('successCloseBtn').style.display = 'inline-block';
+
         state.currentLocation = null;
         state.selectedCategory = null;
         state.currentPhoto = null;
-
-        if (state.isAdmin) syncAdminDashboard();
-
-        setTimeout(() => {
-            document.getElementById('claimModal').classList.add('hidden');
-            document.getElementById('formMessage').style.display = 'none';
-        }, 1400);
     } catch (error) {
         console.error('Error al guardar:', error);
         const msg = navigator.onLine
@@ -565,9 +722,7 @@ function getPrioritySvg(adhesions) {
 }
 
 // ---------------------------------------------------------------------------
-// ADHESIÓN — ahora escribe directo en reclamos_publicos (lo que permiten las
-// Rules nuevas: solo se puede sumar +1 a "adhesions", nada más).
-// Además cierra el detalle antes de abrir el modal (fix del bug de z-index).
+// ADHESIÓN
 // ---------------------------------------------------------------------------
 
 async function addAdhesion(claimId) {
@@ -619,10 +774,18 @@ async function addAdhesion(claimId) {
     submitBtn.onclick = handleSubmit;
 }
 
+// ---------------------------------------------------------------------------
+// MAPA — aprobados agrupados (clustering) + pendientes en gris
+// ---------------------------------------------------------------------------
+
 function renderMapPins() {
+    if (!state.map || !state.clusterGroup) return;
+
+    state.clusterGroup.clearLayers();
     state.markers.forEach(m => state.map.removeLayer(m));
     state.markers = [];
 
+    // --- Aprobados (clusterizados) ---
     let filtered = state.claims.filter(c => c.status === 'approved');
 
     if (state.activeCategoryFilter !== 'all') {
@@ -648,7 +811,7 @@ function renderMapPins() {
             className: ''
         });
 
-        const marker = L.marker([claim.lat, claim.lng], { icon }).addTo(state.map);
+const marker = L.marker([claim.lat, claim.lng], { icon, claimData: claim });
 
         const locText = escapeHtml(claim.address || `${claim.lat?.toFixed(4)}, ${claim.lng?.toFixed(4)}`);
         const popupHTML = `
@@ -662,6 +825,45 @@ function renderMapPins() {
         `;
 
         marker.bindPopup(popupHTML);
+        state.clusterGroup.addLayer(marker);
+    });
+
+    // --- Pendientes en gris (sin clusterizar, son pocos) ---
+    // Admin: ve TODOS los pendientes reales (vienen de Firestore, persistentes).
+    // Vecino sin sesión admin: ve SOLO lo que él mismo cargó en esta pestaña.
+    let pendingToShow = state.isAdmin
+        ? state.adminClaims.filter(c => c.status === 'pending')
+        : state.mySessionPendingClaims;
+
+    if (state.activeCategoryFilter !== 'all') {
+        pendingToShow = pendingToShow.filter(c => c.category === state.activeCategoryFilter);
+    }
+
+    pendingToShow.forEach(claim => {
+        const icon = L.divIcon({
+            html: `<div style="width:18px; height:18px; border-radius:50%; background:#94a3b8; border:2px solid #fff; box-shadow:0 0 4px rgba(0,0,0,0.4);"></div>`,
+            iconSize: [22, 22],
+            className: ''
+        });
+
+        const marker = L.marker([claim.lat, claim.lng], { icon, opacity: 0.85 }).addTo(state.map);
+
+        const popupHTML = state.isAdmin
+            ? `
+                <div class="custom-popup">
+                    <div class="popup-title">${escapeHtml(claim.title || claim.claimId)}</div>
+                    <div class="popup-meta">⏳ Pendiente de revisión</div>
+                    <button class="btn-popup-more" onclick="globalOpenDetailWindow('${claim._fbId}')">Inspeccionar</button>
+                </div>
+            `
+            : `
+                <div class="custom-popup">
+                    <div class="popup-title">${escapeHtml(claim.title || claim.claimId)}</div>
+                    <div class="popup-meta">⏳ Tu reclamo — pendiente de revisión</div>
+                </div>
+            `;
+
+        marker.bindPopup(popupHTML);
         state.markers.push(marker);
     });
 }
@@ -673,17 +875,23 @@ function globalOpenDetailWindow(fbId) {
     const priorityLabel = getPriorityLabel(claim.adhesions || 0);
     const cat = CATEGORIES[claim.category] || { label: 'Reclamo' };
 
-    let html = '';
+   let html = '';
 
     if (claim.photo) {
         html += `<div class="detail-card"><img src="${claim.photo}" class="detail-img"></div>`;
     }
 
+    // ID solo visible para admin
+    if (state.isAdmin) {
+        html += `
+            <div class="detail-card">
+                <div class="detail-label">ID</div>
+                <div class="detail-value">${escapeHtml(claim.claimId)}</div>
+            </div>
+        `;
+    }
+
     html += `
-        <div class="detail-card">
-            <div class="detail-label">ID</div>
-            <div class="detail-value">${escapeHtml(claim.claimId)}</div>
-        </div>
         <div class="detail-card">
             <div class="detail-label">Título</div>
             <div class="detail-value">${escapeHtml(claim.title || claim.claimId)}</div>
@@ -696,15 +904,17 @@ function globalOpenDetailWindow(fbId) {
             <div class="detail-label">Estado de Prioridad</div>
             <div class="detail-value"><span class="status-badge status-${calculatePriority(claim.adhesions || 0)}">${priorityLabel}</span></div>
         </div>
-        <div class="detail-card">
-            <div class="detail-label">Ubicación Registrada</div>
-            <div class="detail-value">${claim.lat.toFixed(4)}, ${claim.lng.toFixed(4)}</div>
-        </div>
-        ${claim.address ? `<div class="detail-card">
-            <div class="detail-label">Referencia</div>
-            <div class="detail-value">${escapeHtml(claim.address)}</div>
-        </div>` : ''}
     `;
+
+    // Coordenadas solo para admin
+    if (state.isAdmin) {
+        html += `
+            <div class="detail-card">
+                <div class="detail-label">Ubicación Registrada (GPS)</div>
+                <div class="detail-value">${claim.lat.toFixed(4)}, ${claim.lng.toFixed(4)}</div>
+            </div>
+        `;
+    }
 
     if (claim.description) {
         html += `
@@ -715,29 +925,57 @@ function globalOpenDetailWindow(fbId) {
         `;
     }
 
-    html += `
-        <div class="adhesion-section">
-            <div class="adhesion-count">
-                <div class="adhesion-number">${claim.adhesions || 0}</div>
-                <div class="adhesion-label">vecino${(claim.adhesions || 0) !== 1 ? 's' : ''} adhieren</div>
+    // Dirección siempre visible (si existe)
+    if (claim.address) {
+        html += `
+            <div class="detail-card">
+                <div class="detail-label">Dirección / Referencia</div>
+                <div class="detail-value">${escapeHtml(claim.address)}</div>
             </div>
-            <button class="btn-adhesion" onclick="addAdhesion('${claim._fbId}')">Adherir</button>
-        </div>
-    `;
+        `;
+    }
 
-    const shareUrl = `${window.location.origin}${window.location.pathname}?claim=${claim.claimId}`;
-    const shareTitle = escapeHtml(claim.title || claim.claimId);
-    html += `
-        <div class="detail-card">
-            <div class="detail-label">Compartir</div>
-            <div class="share-section">
-                <button class="share-btn share-whatsapp" onclick="shareClaimOn('whatsapp', '${shareTitle}', '${shareUrl}')" title="WhatsApp">📱</button>
-                <button class="share-btn share-facebook" onclick="shareClaimOn('facebook', '${shareTitle}', '${shareUrl}')" title="Facebook">f</button>
-                <button class="share-btn share-instagram" onclick="shareClaimOn('instagram', '${shareTitle}', '${shareUrl}')" title="Instagram">📷</button>
-                <button class="share-btn share-twitter" onclick="shareClaimOn('twitter', '${shareTitle}', '${shareUrl}')" title="X">𝕏</button>
+    if (claim.description) {
+        html += `
+            <div class="detail-card">
+                <div class="detail-label">Descripción</div>
+                <div class="detail-value">${escapeHtml(claim.description)}</div>
             </div>
-        </div>
-    `;
+        `;
+    }
+
+    if (claim.status === 'approved' || claim.status === 'solved') {
+        html += `
+            <div class="adhesion-section">
+                <div class="adhesion-count">
+                    <div class="adhesion-number">${claim.adhesions || 0}</div>
+                    <div class="adhesion-label">vecino${(claim.adhesions || 0) !== 1 ? 's' : ''} adhieren</div>
+                </div>
+                <button class="btn-adhesion" onclick="addAdhesion('${claim._fbId}')">Adherir</button>
+            </div>
+        `;
+
+        const shareUrl = `${window.location.origin}${window.location.pathname}?claim=${claim.claimId}`;
+        const shareTitle = escapeHtml(claim.title || claim.claimId);
+        html += `
+            <div class="detail-card">
+                <div class="detail-label">Compartir</div>
+                <div class="share-section">
+                    <button class="share-btn share-whatsapp" onclick="shareClaimOn('whatsapp', '${shareTitle}', '${shareUrl}')" title="WhatsApp">📱</button>
+                    <button class="share-btn share-facebook" onclick="shareClaimOn('facebook', '${shareTitle}', '${shareUrl}')" title="Facebook">f</button>
+                    <button class="share-btn share-instagram" onclick="shareClaimOn('instagram', '${shareTitle}', '${shareUrl}')" title="Instagram">📷</button>
+                    <button class="share-btn share-twitter" onclick="shareClaimOn('twitter', '${shareTitle}', '${shareUrl}')" title="X">𝕏</button>
+                </div>
+            </div>
+        `;
+    } else {
+        html += `
+            <div class="detail-card" style="background:#f1f5f9;">
+                <div class="detail-label">Estado</div>
+                <div class="detail-value">⏳ Pendiente de revisión por un administrador</div>
+            </div>
+        `;
+    }
 
     if (state.isAdmin) {
         html += `
@@ -755,9 +993,99 @@ function globalOpenDetailWindow(fbId) {
             `;
         }
     }
-
+// Centrar mapa en el reclamo y resaltar
+    if (state.map) {
+        state.map.setView([claim.lat, claim.lng], 16);
+        
+        // Opcional: dimmar otros marcadores (efecto sutil)
+        document.querySelectorAll('.leaflet-marker-icon').forEach(marker => {
+            marker.style.opacity = '0.3';
+        });
+        
+        // Encontrar y resaltar el marcador específico del reclamo actual
+        setTimeout(() => {
+            state.clusterGroup.eachLayer((layer) => {
+                if (layer.options && layer.options.claimData && layer.options.claimData._fbId === fbId) {
+                    layer.setOpacity(1);
+                }
+            });
+            state.markers.forEach(marker => {
+                if (marker.options && marker.options.claimData && marker.options.claimData._fbId === fbId) {
+                    marker.setOpacity(1);
+                }
+            });
+        }, 100);
+    }
+    // Admin puede editar si está en pending
+    let editingClaimId = null;
+    if (state.isAdmin && claim.status === 'pending') {
+        html += `
+            <div style="text-align:center; padding:8px;">
+                <button id="toggleEditModeBtn" style="background:#8b5cf6; color:white; border:none; padding:6px 12px; border-radius:6px; font-weight:600; font-size:11px; cursor:pointer;">✏️ Editar antes de procesar</button>
+            </div>
+        `;
+    }
     document.getElementById('detailBody').innerHTML = html;
     document.getElementById('detailPanel').classList.add('visible');
+    // Setup para el botón de edición (solo si es admin y está pending)
+    if (state.isAdmin && claim.status === 'pending') {
+        const toggleEditBtn = document.getElementById('toggleEditModeBtn');
+        const editForm = document.getElementById('detailEditForm');
+        const bodyDiv = document.getElementById('detailBody');
+        
+        document.getElementById('editClaimDescription').value = claim.description || '';
+        document.getElementById('editClaimAddress').value = claim.address || '';
+        document.getElementById('editClaimCategory').value = claim.category || 'otro';
+        
+        toggleEditBtn.addEventListener('click', () => {
+            const isHidden = editForm.style.display === 'none';
+            editForm.style.display = isHidden ? 'block' : 'none';
+            bodyDiv.style.display = isHidden ? 'none' : 'block';
+            toggleEditBtn.textContent = isHidden ? '✕ Cerrar edición' : '✏️ Editar antes de procesar';
+        });
+        
+        document.getElementById('saveEditBtn').addEventListener('click', async () => {
+            const newDesc = document.getElementById('editClaimDescription').value.trim();
+            const newAddr = document.getElementById('editClaimAddress').value.trim();
+            const newCat = document.getElementById('editClaimCategory').value;
+            
+            const btn = document.getElementById('saveEditBtn');
+            btn.disabled = true;
+            btn.textContent = 'Guardando...';
+            
+            try {
+                const { doc, updateDoc } = window.dbMethods;
+                await updateDoc(doc(window.db, "reclamos", fbId), {
+                    description: newDesc,
+                    address: newAddr,
+                    category: newCat
+                });
+                
+                claim.description = newDesc;
+                claim.address = newAddr;
+                claim.category = newCat;
+                
+                editForm.style.display = 'none';
+                bodyDiv.style.display = 'block';
+                toggleEditBtn.textContent = '✏️ Editar antes de procesar';
+                
+                globalOpenDetailWindow(fbId);
+                alert('✅ Reclamo actualizado');
+            } catch (error) {
+                console.error('Error al guardar edición:', error);
+                alert('Error al guardar los cambios');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Guardar';
+            }
+        });
+        
+        document.getElementById('cancelEditBtn').addEventListener('click', () => {
+            editForm.style.display = 'none';
+            bodyDiv.style.display = 'block';
+            toggleEditBtn.textContent = '✏️ Editar antes de procesar';
+        });
+    }
 
     state.map.closePopup();
     document.getElementById('recentClaimsPopup').classList.add('hidden');
@@ -822,9 +1150,7 @@ function renderPublicClaimsList() {
 }
 
 // ---------------------------------------------------------------------------
-// ACCIONES ADMIN — ahora escriben en "reclamos" (privada) Y sincronizan
-// "reclamos_publicos" según corresponda. La autorización real la da
-// firestore.rules (isAdmin()), esto ya no depende de una variable JS.
+// ACCIONES ADMIN
 // ---------------------------------------------------------------------------
 
 async function dispatchStatus(fbId, newStatus) {
@@ -854,7 +1180,6 @@ async function dispatchStatus(fbId, newStatus) {
                 createdAt: claim.createdAt
             });
         } else {
-            // rejected u otro estado: nunca debe quedar visible públicamente
             try { await deleteDoc(publicRef); } catch (e) { /* puede no existir todavía, ok */ }
         }
 
@@ -952,15 +1277,16 @@ function initPoliticalCounter() {
         let percentComplete = (timeElapsed / totalDuration) * 100;
         percentComplete = Math.min(100, Math.max(0, percentComplete));
 
-        if (progressBar) progressBar.style.width = `${percentComplete.toFixed(1)}%`;
-        if (display) display.textContent = `Transcurrido: ${percentComplete.toFixed(1)}% (${daysRemaining} días restantes)`;
+        if (progressBar) {
+            progressBar.style.width = `${percentComplete.toFixed(1)}%`;
+            progressBar.innerHTML = `<span style="color:white; font-weight:700; font-size:12px; text-shadow:0 1px 2px rgba(0,0,0,0.3);">${percentComplete.toFixed(1)}%</span>`;
+        }
+        if (display) display.textContent = `${daysRemaining} días para que arreglen esto`;
     };
 
-    run();
-    setInterval(run, 60000);
+    run(); // ← Ejecutar una vez al cargar
+    setInterval(run, 60000); // ← Actualizar cada minuto
 
-    // El doble-click ahora abre el modal de login real en vez de un prompt()
-    // con la clave hardcodeada.
     const block = document.querySelector('.political-counter');
     if (block) {
         block.style.cursor = 'pointer';
