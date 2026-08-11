@@ -6,7 +6,6 @@ const OLAVARRIA_BOUNDS = {
     minLng: -60.52,
     maxLng: -60.05
 };
-const ADMIN_CODE = 'varilla';
 
 const CATEGORIES = {
     plazas: { label: 'Parques/Paseos/Plazas' },
@@ -18,7 +17,8 @@ const CATEGORIES = {
 };
 
 const state = {
-    claims: [],
+    claims: [],       // datos públicos (colección reclamos_publicos) - sin teléfono, solo aprobados/solucionados
+    adminClaims: [],  // datos completos (colección reclamos) - solo se cargan si sos admin
     map: null,
     markers: [],
     isAdmin: false,
@@ -30,8 +30,8 @@ const state = {
 };
 
 document.addEventListener('DOMContentLoaded', async () => {
-    checkAdminAccess();
-    await loadFirebaseData();
+    initAuthListener();
+    await loadPublicClaims();
     initLeafletMap();
     setupApplicationEvents();
     renderPublicClaimsList();
@@ -39,20 +39,116 @@ document.addEventListener('DOMContentLoaded', async () => {
     handleDeepLinking();
 });
 
-function checkAdminAccess() {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('admin') === ADMIN_CODE) {
-        state.isAdmin = true;
-        document.getElementById('adminSessionBar').style.display = 'flex';
+// ---------------------------------------------------------------------------
+// AUTENTICACIÓN ADMIN (Firebase Auth + Custom Claim, ya no hay clave hardcodeada)
+// ---------------------------------------------------------------------------
+
+function initAuthListener() {
+    const { onAuthStateChanged } = window.authMethods;
+
+    onAuthStateChanged(window.auth, async (user) => {
+        if (!user) {
+            state.isAdmin = false;
+            state.adminClaims = [];
+            document.getElementById('adminSessionBar').style.display = 'none';
+            document.getElementById('adminPanel').classList.add('hidden');
+            return;
+        }
+
+        try {
+            const tokenResult = await user.getIdTokenResult();
+            if (tokenResult.claims.admin === true) {
+                state.isAdmin = true;
+                document.getElementById('adminSessionBar').style.display = 'flex';
+                await loadAdminClaims();
+                syncAdminDashboard();
+                renderMapPins();
+                renderPublicClaimsList();
+            } else {
+                // Se logueó con un usuario válido pero sin el custom claim admin.
+                state.isAdmin = false;
+                document.getElementById('adminSessionBar').style.display = 'none';
+            }
+        } catch (error) {
+            console.error('Error verificando sesión admin:', error);
+            state.isAdmin = false;
+        }
+    });
+}
+
+async function handleAdminLogin() {
+    const email = document.getElementById('adminEmail').value.trim();
+    const password = document.getElementById('adminPassword').value;
+    const errorEl = document.getElementById('adminLoginError');
+    const btn = document.getElementById('adminLoginBtn');
+
+    errorEl.style.display = 'none';
+
+    if (!email || !password) {
+        errorEl.textContent = 'Completá email y contraseña';
+        errorEl.style.display = 'block';
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Ingresando...';
+
+    try {
+        const { signInWithEmailAndPassword } = window.authMethods;
+        await signInWithEmailAndPassword(window.auth, email, password);
+        document.getElementById('adminLoginModal').classList.add('hidden');
+        document.getElementById('adminEmail').value = '';
+        document.getElementById('adminPassword').value = '';
+    } catch (error) {
+        console.error('Error de login:', error);
+        errorEl.textContent = 'Email o contraseña incorrectos';
+        errorEl.style.display = 'block';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Ingresar';
     }
 }
+
+async function handleAdminLogout() {
+    const { signOut } = window.authMethods;
+    try {
+        await signOut(window.auth);
+    } catch (error) {
+        console.error('Error al salir:', error);
+    }
+    window.location.href = window.location.pathname;
+}
+
+// ---------------------------------------------------------------------------
+// UTIL: escape de HTML para todo texto que viene del usuario (fix XSS)
+// ---------------------------------------------------------------------------
+
+function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function findClaimById(fbId) {
+    if (state.isAdmin) {
+        const fromAdmin = state.adminClaims.find(c => c._fbId === fbId);
+        if (fromAdmin) return fromAdmin;
+    }
+    return state.claims.find(c => c._fbId === fbId);
+}
+
+// ---------------------------------------------------------------------------
 
 function handleDeepLinking() {
     const params = new URLSearchParams(window.location.search);
     const claimId = params.get('claim');
-    
+
     if (claimId) {
-        const claim = state.claims.find(c => c.claimId === claimId && c.status === 'approved');
+        const claim = state.claims.find(c => c.claimId === claimId);
         if (claim) {
             setTimeout(() => {
                 if (state.map) {
@@ -74,12 +170,12 @@ function isWithinOlavarria(lat, lng) {
 function initLeafletMap() {
     state.map = L.map('map', { zoomControl: false }).setView([OLAVARRIA_LAT, OLAVARRIA_LNG], 14);
     L.control.zoom({ position: 'bottomleft' }).addTo(state.map);
-    
+
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap'
     }).addTo(state.map);
 
-    const bounds = [[OLAVARRIA_BOUNDS.minLat, OLAVARRIA_BOUNDS.minLng], 
+    const bounds = [[OLAVARRIA_BOUNDS.minLat, OLAVARRIA_BOUNDS.minLng],
                     [OLAVARRIA_BOUNDS.maxLat, OLAVARRIA_BOUNDS.maxLng]];
     L.rectangle(bounds, { color: '#cbd5e1', weight: 2, fillOpacity: 0.05, dashArray: '5, 5' }).addTo(state.map);
 
@@ -102,7 +198,7 @@ function initLeafletMap() {
 function showMapClickModal(lat, lng) {
     const indicator = document.getElementById('mapClickIndicator');
     if (indicator) indicator.remove();
-    
+
     const overlay = document.getElementById('mapClickOverlay');
     document.getElementById('clickCoords').textContent = `📍 ${lat.toFixed(4)}, ${lng.toFixed(4)}`;
     overlay.classList.remove('hidden');
@@ -126,7 +222,7 @@ function setupApplicationEvents() {
         state.currentPhoto = null;
         openClaimModal();
     });
-    
+
     document.getElementById('closeModal').addEventListener('click', closeClaimModal);
     document.getElementById('closeModalBtn').addEventListener('click', closeClaimModal);
     document.getElementById('closeDetail').addEventListener('click', () => {
@@ -147,10 +243,10 @@ function setupApplicationEvents() {
     document.getElementById('categoryFilterBar').addEventListener('click', (e) => {
         const btn = e.target.closest('.filter-btn');
         if (!btn) return;
-        
+
         document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        
+
         state.activeCategoryFilter = btn.dataset.cat;
         renderMapPins();
         renderPublicClaimsList();
@@ -182,9 +278,7 @@ function setupApplicationEvents() {
         document.getElementById('adminPanel').classList.add('hidden');
         setTimeout(() => state.map.invalidateSize(), 200);
     });
-    document.getElementById('exitSessionBtn').addEventListener('click', () => {
-        window.location.href = window.location.pathname;
-    });
+    document.getElementById('exitSessionBtn').addEventListener('click', handleAdminLogout);
 
     document.querySelectorAll('.admin-nav .nav-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
@@ -200,6 +294,20 @@ function setupApplicationEvents() {
     document.getElementById('cancelAdhesion').addEventListener('click', () => {
         document.getElementById('adhesionModal').classList.add('hidden');
     });
+
+    // Login admin (reemplaza al prompt() con clave hardcodeada)
+    document.getElementById('adminLoginBtn').addEventListener('click', handleAdminLogin);
+    document.getElementById('cancelAdminLogin').addEventListener('click', () => {
+        document.getElementById('adminLoginModal').classList.add('hidden');
+        document.getElementById('adminLoginError').style.display = 'none';
+    });
+    document.getElementById('closeAdminLogin').addEventListener('click', () => {
+        document.getElementById('adminLoginModal').classList.add('hidden');
+        document.getElementById('adminLoginError').style.display = 'none';
+    });
+    document.getElementById('adminPassword').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') handleAdminLogin();
+    });
 }
 
 function openClaimModal() {
@@ -207,7 +315,7 @@ function openClaimModal() {
     const hasLocation = state.currentLocation !== null;
     resetFormState(hasLocation);
     modal.classList.remove('hidden');
-    
+
     if (state.currentLocation) {
         showLocationDisplay();
     }
@@ -224,7 +332,7 @@ function showLocationDisplay() {
 function openMapClickModal() {
     const modal = document.getElementById('claimModal');
     modal.classList.add('hidden');
-    
+
     const indicator = document.createElement('div');
     indicator.id = 'mapClickIndicator';
     indicator.style.cssText = `
@@ -244,7 +352,7 @@ function openMapClickModal() {
     indicator.innerHTML = `
         <p style="font-size: 16px; margin-bottom: 12px;">👆 Haz click en el mapa</p>
         <p style="font-size: 12px; color: #64748b;">Señala dónde está el problema</p>
-        <button onclick="document.getElementById('mapClickIndicator').remove(); document.getElementById('claimModal').classList.remove('hidden');" 
+        <button onclick="document.getElementById('mapClickIndicator').remove(); document.getElementById('claimModal').classList.remove('hidden');"
                 style="margin-top: 12px; padding: 8px 16px; background: #e2e8f0; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">Cancelar</button>
     `;
     document.body.appendChild(indicator);
@@ -267,11 +375,11 @@ function resetFormState(preserveLocation = false) {
     document.getElementById('claimAddress').value = '';
     document.getElementById('claimDescription').value = '';
     document.getElementById('locationDisplay').style.display = 'none';
-    
+
     document.querySelectorAll('#categoryGrid .category-option').forEach(o => o.classList.remove('selected'));
     document.getElementById('photoPreview').style.display = 'none';
     document.getElementById('photoDropZone').style.display = 'block';
-    
+
     state.selectedCategory = null;
     if (!preserveLocation) state.currentLocation = null;
     state.currentPhoto = null;
@@ -340,6 +448,10 @@ function clearPhotoEvidencia() {
     document.getElementById('claimPhoto').value = '';
 }
 
+// ---------------------------------------------------------------------------
+// CREAR RECLAMO — con protección anti doble-submit (disabled + finally)
+// ---------------------------------------------------------------------------
+
 async function executeSubmitForm() {
     const title = document.getElementById('claimTitle').value.trim();
     const name = document.getElementById('claimName').value.trim();
@@ -356,7 +468,9 @@ async function executeSubmitForm() {
     if (!phone.startsWith('2284')) return flashErrorMessage('Teléfono debe empezar con 2284 (Olavarría)');
 
     const claimId = 'OLV-' + new Date().getFullYear() + '-' + Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-    
+
+    // Este shape tiene que coincidir con lo que exige firestore.rules en "allow create"
+    // de la colección "reclamos": status pending, adhesions 0, tipos correctos.
     const claimData = {
         id: Date.now(),
         claimId: claimId,
@@ -376,29 +490,38 @@ async function executeSubmitForm() {
         createdAt: new Date().toISOString()
     };
 
+    const btn = document.getElementById('submitBtn');
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.textContent = 'Enviando...';
+
     try {
         const { collection, addDoc } = window.dbMethods;
         const docRef = await addDoc(collection(window.db, "reclamos"), claimData);
-
         claimData._fbId = docRef.id;
-        state.claims.push(claimData);
 
-        flashSuccessMessage('✅ Reclamo enviado correctamente');
+        if (state.isAdmin) state.adminClaims.push(claimData);
+
+        flashSuccessMessage('✅ Reclamo enviado correctamente. Va a aparecer en el mapa una vez revisado.');
         state.currentLocation = null;
         state.selectedCategory = null;
         state.currentPhoto = null;
-        document.getElementById('claimModal').classList.add('hidden');
-        renderMapPins();
-        renderPublicClaimsList();
 
         if (state.isAdmin) syncAdminDashboard();
 
         setTimeout(() => {
+            document.getElementById('claimModal').classList.add('hidden');
             document.getElementById('formMessage').style.display = 'none';
-        }, 3000);
+        }, 1400);
     } catch (error) {
         console.error('Error al guardar:', error);
-        flashErrorMessage('Error al guardar. Intenta nuevamente.');
+        const msg = navigator.onLine
+            ? 'Error al guardar. Intenta nuevamente.'
+            : 'Sin conexión a internet. Revisá tu conexión e intenta de nuevo.';
+        flashErrorMessage(msg);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Enviar Reporte';
     }
 }
 
@@ -435,17 +558,25 @@ function getPrioritySvg(adhesions) {
     if (adhesions >= 20) {
         return '<img src="cono-rojo.png" class="priority-icon" alt="Urgente">';
     }
-
     if (adhesions >= 10) {
         return '<img src="cono-naranja.png" class="priority-icon" alt="Prioritario">';
     }
-
     return '<img src="cono-amarillo.png" class="priority-icon" alt="Normal">';
 }
 
+// ---------------------------------------------------------------------------
+// ADHESIÓN — ahora escribe directo en reclamos_publicos (lo que permiten las
+// Rules nuevas: solo se puede sumar +1 a "adhesions", nada más).
+// Además cierra el detalle antes de abrir el modal (fix del bug de z-index).
+// ---------------------------------------------------------------------------
+
 async function addAdhesion(claimId) {
+    document.getElementById('detailPanel').classList.remove('visible');
+
     const modal = document.getElementById('adhesionModal');
     modal.classList.remove('hidden');
+
+    const submitBtn = document.getElementById('submitAdhesion');
 
     const handleSubmit = async () => {
         const name = document.getElementById('adhesionName').value.trim();
@@ -457,17 +588,19 @@ async function addAdhesion(claimId) {
         const claim = state.claims.find(c => c._fbId === claimId);
         if (!claim) return;
 
-        try {
-            claim.adhesions = (claim.adhesions || 0) + 1;
+        if (submitBtn.disabled) return;
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Enviando...';
 
+        try {
+            const newCount = (claim.adhesions || 0) + 1;
             const { doc, updateDoc } = window.dbMethods;
-            const docRef = doc(window.db, "reclamos", claim._fbId);
-            await updateDoc(docRef, {
-                adhesions: claim.adhesions
-            });
+            const docRef = doc(window.db, "reclamos_publicos", claimId);
+            await updateDoc(docRef, { adhesions: newCount });
+            claim.adhesions = newCount;
 
             document.getElementById('adhesionName').value = '';
-            document.getElementById('adhesionModal').classList.add('hidden');
+            modal.classList.add('hidden');
 
             renderPublicClaimsList();
             renderMapPins();
@@ -477,10 +610,13 @@ async function addAdhesion(claimId) {
         } catch (error) {
             console.error('Error al adherir:', error);
             alert('Error al guardar tu adhesión');
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Adherir';
         }
     };
 
-    document.getElementById('submitAdhesion').onclick = handleSubmit;
+    submitBtn.onclick = handleSubmit;
 }
 
 function renderMapPins() {
@@ -504,7 +640,6 @@ function renderMapPins() {
     });
 
     filtered.forEach(claim => {
-        const cat = CATEGORIES[claim.category] || { label: 'Reclamo' };
         const priorityLabel = getPriorityLabel(claim.adhesions || 0);
         const prioritySvg = getPrioritySvg(claim.adhesions || 0);
         const icon = L.divIcon({
@@ -515,11 +650,11 @@ function renderMapPins() {
 
         const marker = L.marker([claim.lat, claim.lng], { icon }).addTo(state.map);
 
-        const locText = claim.address || `${claim.lat?.toFixed(4)}, ${claim.lng?.toFixed(4)}`;
+        const locText = escapeHtml(claim.address || `${claim.lat?.toFixed(4)}, ${claim.lng?.toFixed(4)}`);
         const popupHTML = `
             <div class="custom-popup">
                 ${claim.photo ? `<div class="popup-img-container"><img src="${claim.photo}" class="popup-mini-img"></div>` : ''}
-                <div class="popup-title">${claim.title || claim.claimId}</div>
+                <div class="popup-title">${escapeHtml(claim.title || claim.claimId)}</div>
                 <div class="popup-meta">${locText}</div>
                 <div class="popup-time">${priorityLabel}</div>
                 <button class="btn-popup-more" onclick="globalOpenDetailWindow('${claim._fbId}')">Ver detalles</button>
@@ -532,7 +667,7 @@ function renderMapPins() {
 }
 
 function globalOpenDetailWindow(fbId) {
-    const claim = state.claims.find(c => c._fbId === fbId);
+    const claim = findClaimById(fbId);
     if (!claim) return;
 
     const priorityLabel = getPriorityLabel(claim.adhesions || 0);
@@ -547,15 +682,15 @@ function globalOpenDetailWindow(fbId) {
     html += `
         <div class="detail-card">
             <div class="detail-label">ID</div>
-            <div class="detail-value">${claim.claimId}</div>
+            <div class="detail-value">${escapeHtml(claim.claimId)}</div>
         </div>
         <div class="detail-card">
             <div class="detail-label">Título</div>
-            <div class="detail-value">${claim.title || claim.claimId}</div>
+            <div class="detail-value">${escapeHtml(claim.title || claim.claimId)}</div>
         </div>
         <div class="detail-card">
             <div class="detail-label">Categoría</div>
-            <div class="detail-value">${cat.label}</div>
+            <div class="detail-value">${escapeHtml(cat.label)}</div>
         </div>
         <div class="detail-card">
             <div class="detail-label">Estado de Prioridad</div>
@@ -567,7 +702,7 @@ function globalOpenDetailWindow(fbId) {
         </div>
         ${claim.address ? `<div class="detail-card">
             <div class="detail-label">Referencia</div>
-            <div class="detail-value">${claim.address}</div>
+            <div class="detail-value">${escapeHtml(claim.address)}</div>
         </div>` : ''}
     `;
 
@@ -575,7 +710,7 @@ function globalOpenDetailWindow(fbId) {
         html += `
             <div class="detail-card">
                 <div class="detail-label">Descripción</div>
-                <div class="detail-value">${claim.description}</div>
+                <div class="detail-value">${escapeHtml(claim.description)}</div>
             </div>
         `;
     }
@@ -591,15 +726,15 @@ function globalOpenDetailWindow(fbId) {
     `;
 
     const shareUrl = `${window.location.origin}${window.location.pathname}?claim=${claim.claimId}`;
-    const shareText = `${claim.title}\nAyudanos adhiriendo a este reclamo ciudadano.\n${shareUrl}`;
+    const shareTitle = escapeHtml(claim.title || claim.claimId);
     html += `
         <div class="detail-card">
             <div class="detail-label">Compartir</div>
             <div class="share-section">
-                <button class="share-btn share-whatsapp" onclick="shareClaimOn('whatsapp', '${claim.title || claim.claimId}', '${shareUrl}')" title="WhatsApp">📱</button>
-                <button class="share-btn share-facebook" onclick="shareClaimOn('facebook', '${claim.title || claim.claimId}', '${shareUrl}')" title="Facebook">f</button>
-                <button class="share-btn share-instagram" onclick="shareClaimOn('instagram', '${claim.title || claim.claimId}', '${shareUrl}')" title="Instagram">📷</button>
-                <button class="share-btn share-twitter" onclick="shareClaimOn('twitter', '${claim.title || claim.claimId}', '${shareUrl}')" title="X">𝕏</button>
+                <button class="share-btn share-whatsapp" onclick="shareClaimOn('whatsapp', '${shareTitle}', '${shareUrl}')" title="WhatsApp">📱</button>
+                <button class="share-btn share-facebook" onclick="shareClaimOn('facebook', '${shareTitle}', '${shareUrl}')" title="Facebook">f</button>
+                <button class="share-btn share-instagram" onclick="shareClaimOn('instagram', '${shareTitle}', '${shareUrl}')" title="Instagram">📷</button>
+                <button class="share-btn share-twitter" onclick="shareClaimOn('twitter', '${shareTitle}', '${shareUrl}')" title="X">𝕏</button>
             </div>
         </div>
     `;
@@ -623,7 +758,7 @@ function globalOpenDetailWindow(fbId) {
 
     document.getElementById('detailBody').innerHTML = html;
     document.getElementById('detailPanel').classList.add('visible');
-    
+
     state.map.closePopup();
     document.getElementById('recentClaimsPopup').classList.add('hidden');
 }
@@ -632,7 +767,7 @@ function shareClaimOn(platform, title, url) {
     const msg = `${title}. Ayudanos adhiriendo a este reclamo ciudadano.`;
     let shareUrl = '';
 
-    switch(platform) {
+    switch (platform) {
         case 'whatsapp':
             shareUrl = `https://wa.me/?text=${encodeURIComponent(msg + ' ' + url)}`;
             break;
@@ -652,7 +787,7 @@ function shareClaimOn(platform, title, url) {
 
 function renderPublicClaimsList() {
     let approved = state.claims.filter(c => c.status === 'approved');
-    
+
     if (state.activeCategoryFilter !== 'all') {
         approved = approved.filter(c => c.category === state.activeCategoryFilter);
     }
@@ -670,16 +805,15 @@ function renderPublicClaimsList() {
     document.getElementById('claimCounter').textContent = approved.length;
 
     const html = approved.map((claim) => {
-        const cat = CATEGORIES[claim.category] || { label: 'Reclamo' };
         const priorityLabel = getPriorityLabel(claim.adhesions || 0);
-        const locText = claim.address || `${claim.lat?.toFixed(4)}, ${claim.lng?.toFixed(4)}` || 'Ubicación registrada';
+        const locText = escapeHtml(claim.address || `${claim.lat?.toFixed(4)}, ${claim.lng?.toFixed(4)}` || 'Ubicación registrada');
         return `
             <div class="claim-item" onclick="globalOpenDetailWindow('${claim._fbId}')">
                 <div class="claim-item-header">
-                    <span class="claim-item-id">${claim.claimId}</span>
+                    <span class="claim-item-id">${escapeHtml(claim.claimId)}</span>
                     <span class="claim-item-status">${priorityLabel}</span>
                 </div>
-                <div class="claim-item-name">${claim.title || claim.claimId}</div>
+                <div class="claim-item-name">${escapeHtml(claim.title || claim.claimId)}</div>
                 <div class="claim-item-desc">${locText}...</div>
             </div>
         `;
@@ -687,22 +821,49 @@ function renderPublicClaimsList() {
     document.getElementById('claimsList').innerHTML = html || '<div style="padding:16px; font-size:11px; color:#64748b; text-align:center; font-weight:600;">Sin reportes para esta sección.</div>';
 }
 
+// ---------------------------------------------------------------------------
+// ACCIONES ADMIN — ahora escriben en "reclamos" (privada) Y sincronizan
+// "reclamos_publicos" según corresponda. La autorización real la da
+// firestore.rules (isAdmin()), esto ya no depende de una variable JS.
+// ---------------------------------------------------------------------------
+
 async function dispatchStatus(fbId, newStatus) {
-    const claim = state.claims.find(c => c._fbId === fbId);
+    const claim = state.adminClaims.find(c => c._fbId === fbId);
     if (!claim) return;
 
     try {
-        const { doc, updateDoc } = window.dbMethods;
-        const docRef = doc(window.db, "reclamos", fbId);
+        const { doc, updateDoc, setDoc, deleteDoc } = window.dbMethods;
 
-        await updateDoc(docRef, { status: newStatus });
+        await updateDoc(doc(window.db, "reclamos", fbId), { status: newStatus });
         claim.status = newStatus;
-        
+
+        const publicRef = doc(window.db, "reclamos_publicos", fbId);
+
+        if (newStatus === 'approved' || newStatus === 'solved') {
+            await setDoc(publicRef, {
+                claimId: claim.claimId,
+                title: claim.title,
+                category: claim.category,
+                address: claim.address || '',
+                description: claim.description || '',
+                lat: claim.lat,
+                lng: claim.lng,
+                photo: claim.photo || null,
+                status: newStatus,
+                adhesions: claim.adhesions || 0,
+                createdAt: claim.createdAt
+            });
+        } else {
+            // rejected u otro estado: nunca debe quedar visible públicamente
+            try { await deleteDoc(publicRef); } catch (e) { /* puede no existir todavía, ok */ }
+        }
+
+        await loadPublicClaims();
         renderPublicClaimsList();
         renderMapPins();
-        if (state.isAdmin) syncAdminDashboard();
+        syncAdminDashboard();
         document.getElementById('detailPanel').classList.remove('visible');
-        
+
         console.log(`✓ Estado actualizado: ${newStatus}`);
     } catch (error) {
         console.error("Error:", error);
@@ -711,25 +872,25 @@ async function dispatchStatus(fbId, newStatus) {
 }
 
 async function deleteClaimFromDatabase(fbId) {
-    const claim = state.claims.find(c => c._fbId === fbId);
+    const claim = state.adminClaims.find(c => c._fbId === fbId);
     if (!claim) return;
 
     if (!confirm(`¿Eliminar reclamo ${claim.claimId}?`)) return;
 
     try {
-        const { deleteDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
-        const { doc } = window.dbMethods;
-        
-        const docRef = doc(window.db, "reclamos", fbId);
-        await deleteDoc(docRef);
+        const { doc, deleteDoc } = window.dbMethods;
 
+        await deleteDoc(doc(window.db, "reclamos", fbId));
+        try { await deleteDoc(doc(window.db, "reclamos_publicos", fbId)); } catch (e) { /* puede no existir, ok */ }
+
+        state.adminClaims = state.adminClaims.filter(c => c._fbId !== fbId);
         state.claims = state.claims.filter(c => c._fbId !== fbId);
 
         renderPublicClaimsList();
         renderMapPins();
-        if (state.isAdmin) syncAdminDashboard();
+        syncAdminDashboard();
         document.getElementById('detailPanel').classList.remove('visible');
-        
+
         console.log("✓ Reclamo eliminado");
     } catch (error) {
         console.error("Error:", error);
@@ -738,35 +899,35 @@ async function deleteClaimFromDatabase(fbId) {
 }
 
 function syncAdminDashboard() {
-    document.getElementById('adminStatTotal').textContent = state.claims.length;
-    document.getElementById('adminStatPending').textContent = state.claims.filter(c => c.status === 'pending').length;
-    document.getElementById('adminStatApproved').textContent = state.claims.filter(c => c.status === 'approved').length;
-    document.getElementById('adminStatSolved').textContent = state.claims.filter(c => c.status === 'solved').length;
-    document.getElementById('adminStatRejected').textContent = state.claims.filter(c => c.status === 'rejected').length;
-    
+    document.getElementById('adminStatTotal').textContent = state.adminClaims.length;
+    document.getElementById('adminStatPending').textContent = state.adminClaims.filter(c => c.status === 'pending').length;
+    document.getElementById('adminStatApproved').textContent = state.adminClaims.filter(c => c.status === 'approved').length;
+    document.getElementById('adminStatSolved').textContent = state.adminClaims.filter(c => c.status === 'solved').length;
+    document.getElementById('adminStatRejected').textContent = state.adminClaims.filter(c => c.status === 'rejected').length;
+
     const currentSection = document.querySelector('.admin-nav .nav-btn.active').dataset.section;
     renderAdminViewCards(currentSection);
 }
 
 function renderAdminViewCards(section) {
-    const targets = state.claims.filter(c => c.status === section);
+    const targets = state.adminClaims.filter(c => c.status === section);
     const html = targets.map((claim) => {
         const cat = CATEGORIES[claim.category] || { label: 'Reclamo' };
         const priorityLabel = getPriorityLabel(claim.adhesions || 0);
         const createdDate = new Date(claim.createdAt).toLocaleDateString('es-AR');
         return `
             <div class="admin-card">
-                <div class="admin-card-id">${claim.claimId}</div>
-                <div class="admin-card-name">${claim.title || claim.claimId}</div>
-                <div class="admin-card-text">"${claim.description?.substring(0, 60) || claim.address || 'Sin descripción'}..."</div>
+                <div class="admin-card-id">${escapeHtml(claim.claimId)}</div>
+                <div class="admin-card-name">${escapeHtml(claim.title || claim.claimId)}</div>
+                <div class="admin-card-text">"${escapeHtml((claim.description || claim.address || 'Sin descripción').substring(0, 60))}..."</div>
                 <div class="admin-card-meta">
-                    <span class="admin-card-badge" style="background:#f3f4f6; color:#374151;">Categoría: ${cat.label}</span>
+                    <span class="admin-card-badge" style="background:#f3f4f6; color:#374151;">Categoría: ${escapeHtml(cat.label)}</span>
                 </div>
                 <div class="admin-card-meta">
                     <span class="admin-card-badge" style="background:#fef3c7; color:#92400e;">Prioridad: ${priorityLabel}</span>
                     <span class="admin-card-badge" style="background:#dbeafe; color:#1e40af;">${claim.adhesions || 0} adhesiones</span>
                 </div>
-                <div class="admin-card-meta">Creado: ${createdDate} | Autor: ${claim.name}</div>
+                <div class="admin-card-meta">Creado: ${createdDate} | Autor: ${escapeHtml(claim.name)}</div>
                 <button class="btn-popup-more" onclick="globalOpenDetailWindow('${claim._fbId}')">Inspeccionar</button>
             </div>
         `;
@@ -777,7 +938,7 @@ function renderAdminViewCards(section) {
 function initPoliticalCounter() {
     const startDate = new Date('2023-12-10T00:00:00');
     const targetDate = new Date('2027-12-10T00:00:00');
-    
+
     const display = document.getElementById('daysCounter');
     const progressBar = document.getElementById('governmentProgressBar');
 
@@ -786,7 +947,7 @@ function initPoliticalCounter() {
         const totalDuration = targetDate - startDate;
         const timeElapsed = now - startDate;
         const timeRemaining = targetDate - now;
-        
+
         const daysRemaining = Math.max(0, Math.floor(timeRemaining / (1000 * 60 * 60 * 24)));
         let percentComplete = (timeElapsed / totalDuration) * 100;
         percentComplete = Math.min(100, Math.max(0, percentComplete));
@@ -798,29 +959,26 @@ function initPoliticalCounter() {
     run();
     setInterval(run, 60000);
 
+    // El doble-click ahora abre el modal de login real en vez de un prompt()
+    // con la clave hardcodeada.
     const block = document.querySelector('.political-counter');
     if (block) {
         block.style.cursor = 'pointer';
         block.addEventListener('dblclick', () => {
-            const intento = prompt('🔑 Ingrese clave de administración:');
-            if (intento === ADMIN_CODE) {
-                state.isAdmin = true;
-                document.getElementById('adminSessionBar').style.display = 'flex';
-                syncAdminDashboard();
-                renderMapPins();
-                alert('✅ Modo Auditor Activado');
-            } else if (intento !== null) {
-                alert('❌ Clave incorrecta');
-            }
+            document.getElementById('adminLoginModal').classList.remove('hidden');
         });
     }
 }
 
-async function loadFirebaseData() {
+// ---------------------------------------------------------------------------
+// CARGA DE DATOS
+// ---------------------------------------------------------------------------
+
+async function loadPublicClaims() {
     try {
         const { collection, getDocs } = window.dbMethods;
-        const querySnapshot = await getDocs(collection(window.db, "reclamos"));
-        
+        const querySnapshot = await getDocs(collection(window.db, "reclamos_publicos"));
+
         const cargados = [];
         querySnapshot.forEach((doc) => {
             const data = doc.data();
@@ -830,11 +988,34 @@ async function loadFirebaseData() {
                 adhesions: data.adhesions || 0
             });
         });
-        
+
         state.claims = cargados;
-        console.log("✅ Datos cargados:", state.claims.length);
+        console.log("✅ Reclamos públicos cargados:", state.claims.length);
     } catch (error) {
-        console.error("❌ Error Firebase:", error);
+        console.error("❌ Error cargando reclamos públicos:", error);
         state.claims = [];
+    }
+}
+
+async function loadAdminClaims() {
+    try {
+        const { collection, getDocs } = window.dbMethods;
+        const querySnapshot = await getDocs(collection(window.db, "reclamos"));
+
+        const cargados = [];
+        querySnapshot.forEach((doc) => {
+            const data = doc.data();
+            cargados.push({
+                _fbId: doc.id,
+                ...data,
+                adhesions: data.adhesions || 0
+            });
+        });
+
+        state.adminClaims = cargados;
+        console.log("✅ Panel admin cargado:", state.adminClaims.length);
+    } catch (error) {
+        console.error("❌ Error cargando panel admin:", error);
+        state.adminClaims = [];
     }
 }

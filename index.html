@@ -205,6 +205,25 @@
         </div>
     </div>
 
+    <!-- NUEVO: modal de login admin. Reemplaza al prompt() con la clave hardcodeada. -->
+    <div id="adminLoginModal" class="modal hidden">
+        <div class="modal-content" style="max-width:340px;">
+            <div class="modal-header">
+                <h2>Acceso administrador</h2>
+                <button id="closeAdminLogin" class="btn-close">×</button>
+            </div>
+            <div class="modal-body">
+                <input type="email" id="adminEmail" placeholder="Email" class="input-field" autocomplete="username">
+                <input type="password" id="adminPassword" placeholder="Contraseña" class="input-field" autocomplete="current-password">
+                <div id="adminLoginError" class="form-message" style="background:#fee2e2; color:#991b1b; display:none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button id="adminLoginBtn" class="btn-success">Ingresar</button>
+                <button id="cancelAdminLogin" class="btn-secondary">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
     <div id="adminPanel" class="admin-panel hidden">
         <header class="admin-header">
             <h1>Panel Interno de Moderación</h1>
@@ -249,7 +268,13 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-        import { getFirestore, collection, addDoc, getDocs, query, where, updateDoc, doc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+        import {
+            getFirestore, collection, addDoc, getDocs, query, where,
+            updateDoc, deleteDoc, doc, setDoc
+        } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+        import {
+            getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged
+        } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyBKgEWsTp99be6WRJddx3_WoUJROHKlxMU",
@@ -262,9 +287,12 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
+        const auth = getAuth(app);
 
         window.db = db;
-        window.dbMethods = { collection, addDoc, getDocs, query, where, updateDoc, doc };
+        window.dbMethods = { collection, addDoc, getDocs, query, where, updateDoc, deleteDoc, doc, setDoc };
+        window.auth = auth;
+        window.authMethods = { signInWithEmailAndPassword, signOut, onAuthStateChanged };
     </script>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
