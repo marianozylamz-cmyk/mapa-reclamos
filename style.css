@@ -1018,3 +1018,70 @@ html, body {
     object-fit: contain;
     filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.35));
 }
+/* ==================== PAGE LOADER ==================== */
+#mp-page-loader {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    background: #ffffff;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 99999;
+    opacity: 1;
+    transition: opacity 0.4s ease-in-out;
+}
+
+#mp-page-loader.mp-fade-out {
+    opacity: 0;
+    pointer-events: none;
+}
+
+#mp-page-loader img {
+    width: 75px;
+    height: auto;
+    animation: loader-pulse 1.2s ease-in-out infinite;
+    object-fit: contain;
+}
+
+#mp-page-loader-text {
+    margin-top: 5px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #64748b;
+    letter-spacing: 0.5px;
+    animation: loader-text-fade 1.2s ease-in-out infinite;
+}
+
+@keyframes loader-pulse {
+    0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.35;
+        transform: scale(0.92);
+    }
+}
+
+@keyframes loader-text-fade {
+    0%, 100% {
+        opacity: 0.7;
+    }
+    50% {
+        opacity: 0.35;
+    }
+}
+
+@media (min-width: 1024px) {
+    #mp-page-loader img {
+        width: 100px;
+        height: auto;
+    }
+}
+
+body.mp-loading {
+    overflow: hidden;
+}

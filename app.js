@@ -1,3 +1,56 @@
+// ==================== PAGE LOADER INIT ====================
+const initPageLoader = () => {
+    const MIN_SHOW_MS = 800;
+    const MAX_WAIT_MS = 3500;
+    
+    const loader = document.getElementById('mp-page-loader');
+    const body = document.body;
+    
+    if (!loader) return;
+    
+    // Agregar clase de "cargando" al body
+    body.classList.add('mp-loading');
+    
+    // Tiempo mínimo de espera
+    let minTimeReached = false;
+    setTimeout(() => {
+        minTimeReached = true;
+        // Si ya está listo, remover inmediatamente
+        if (window.mpLoaderReady) {
+            hidePageLoader();
+        }
+    }, MIN_SHOW_MS);
+    
+    // Timeout máximo de respaldo (3.5 seg)
+    window.mpLoaderTimeout = setTimeout(() => {
+        hidePageLoader();
+    }, MAX_WAIT_MS);
+    
+    // Función para ocultar el loader
+    window.hidePageLoader = () => {
+        if (!loader) return;
+        
+        clearTimeout(window.mpLoaderTimeout);
+        
+        loader.classList.add('mp-fade-out');
+        body.classList.remove('mp-loading');
+        
+        // Eliminar del DOM después de la animación
+        setTimeout(() => {
+            if (loader.parentNode) {
+                loader.parentNode.removeChild(loader);
+            }
+            window.mpLoaderReady = true;
+        }, 400);
+    };
+    
+    // Marcar como "ready" cuando el loader esté listo para ocultarse
+    window.mpLoaderReady = false;
+};
+
+// Inicializar el loader
+initPageLoader();
+
 const OLAVARRIA_LAT = -36.8927;
 const OLAVARRIA_LNG = -60.3225;
 const OLAVARRIA_BOUNDS = {
@@ -39,6 +92,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderPublicClaimsList();
     initPoliticalCounter();
     handleDeepLinking();
+    
+    // ← AGREGAR ESTA LÍNEA: Ocultar loader después de que todo esté listo
+    if (typeof hidePageLoader === 'function') {
+        setTimeout(() => hidePageLoader(), 200);
+    }
 });
 
 // ---------------------------------------------------------------------------
