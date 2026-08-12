@@ -242,7 +242,7 @@ function initLeafletMap() {
     // Los reclamos aprobados van agrupados (clustering) para que no se amontonen
     // en el mapa cuando hay muchos cerca. Ver leaflet.markercluster en index.html.
    state.clusterGroup = L.markerClusterGroup({
-    maxClusterRadius: 50,
+    maxClusterRadius: 5,
     spiderfyOnMaxZoom: true,
     showCoverageOnHover: false,
     iconCreateFunction: function(cluster) {
