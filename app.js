@@ -581,14 +581,11 @@ function processPhotoFile(e) {
 
     const dropIcon = document.getElementById('photoDropIcon');
     const dropLabel = document.getElementById('photoDropLabel');
-    const dropHint = document.getElementById('photoDropHint');
     const originalIcon = dropIcon.textContent;
     const originalLabel = dropLabel.textContent;
-    const originalHint = dropHint.textContent;
 
     dropIcon.textContent = '⏳';
     dropLabel.textContent = 'Optimizando imagen...';
-    dropHint.textContent = 'Puede tardar unos segundos';
 
     compressImage(file)
         .then((dataUrl) => {
@@ -596,7 +593,6 @@ function processPhotoFile(e) {
             document.getElementById('photoImg').src = state.currentPhoto;
             dropIcon.textContent = originalIcon;
             dropLabel.textContent = originalLabel;
-            dropHint.textContent = originalHint;
             document.getElementById('photoDropZone').style.display = 'none';
             document.getElementById('photoPreview').style.display = 'block';
         })
@@ -604,7 +600,6 @@ function processPhotoFile(e) {
             console.error('Error procesando la imagen:', error);
             dropIcon.textContent = originalIcon;
             dropLabel.textContent = originalLabel;
-            dropHint.textContent = originalHint;
             flashErrorMessage('No se pudo procesar esa imagen. Probá con otra foto.');
         });
 }
