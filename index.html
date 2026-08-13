@@ -309,9 +309,9 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
         import {
-            getFirestore, collection, addDoc, getDocs, query, where,
-            updateDoc, deleteDoc, doc, setDoc
-        } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+    getFirestore, collection, addDoc, getDocs, getDoc, query, where,
+    updateDoc, deleteDoc, doc, setDoc
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
         import {
             getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged
         } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
@@ -330,8 +330,7 @@
         const auth = getAuth(app);
 
         window.db = db;
-        window.dbMethods = { collection, addDoc, getDocs, query, where, updateDoc, deleteDoc, doc, setDoc };
-        window.auth = auth;
+        window.dbMethods = { collection, addDoc, getDocs, getDoc, query, where, updateDoc, deleteDoc, doc, setDoc };        window.auth = auth;
         window.authMethods = { signInWithEmailAndPassword, signOut, onAuthStateChanged };
     </script>
 

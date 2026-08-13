@@ -70,12 +70,13 @@ const CATEGORIES = {
 };
 
 const state = {
-    claims: [],               // datos públicos (reclamos_publicos) - aprobados/solucionados
-    adminClaims: [],          // datos completos (reclamos) - solo si sos admin
-    mySessionPendingClaims: [], // reclamos pendientes cargados por VOS en esta sesión (en memoria, se pierde al recargar)
+    claims: [],
+    adminClaims: [],
+    mySessionPendingClaims: [],
+    photoCache: {}, // 🆕 fbId -> base64 | null (null = "ya consultamos, no tiene foto")
     map: null,
-    clusterGroup: null,       // agrupa los pines aprobados
-    markers: [],              // pines pendientes en gris (sueltos, sin clusterizar)
+    clusterGroup: null,
+    markers: [],
     isAdmin: false,
     selectedCategory: null,
     currentLocation: null,
@@ -644,12 +645,30 @@ function compressImage(file, maxWidth = 1600) {
     });
 }
 
+async function fetchClaimPhoto(fbId, collectionName) {
+    if (Object.prototype.hasOwnProperty.call(state.photoCache, fbId)) {
+        return state.photoCache[fbId]; // ya está en cache (aunque sea null)
+    }
+    try {
+        const { doc, getDoc } = window.dbMethods;
+        const mediaRef = doc(window.db, collectionName, fbId, 'media', 'foto');
+        const snap = await getDoc(mediaRef);
+        const photo = snap.exists() ? (snap.data().photo || null) : null;
+        state.photoCache[fbId] = photo;
+        return photo;
+    } catch (error) {
+        console.error('Error obteniendo la foto del reclamo:', error);
+        return null; // no cacheamos el error para poder reintentar
+    }
+}
+
 function clearPhotoEvidencia() {
     state.currentPhoto = null;
     document.getElementById('photoPreview').style.display = 'none';
     document.getElementById('photoDropZone').style.display = 'block';
     document.getElementById('claimPhoto').value = '';
 }
+
 
 // ---------------------------------------------------------------------------
 // CREAR RECLAMO
@@ -667,11 +686,11 @@ async function executeSubmitForm() {
     if (!category) return flashErrorMessage('Selecciona una categoría');
     if (!location) return flashErrorMessage('⚠️ Debes seleccionar ubicación: Usa GPS o señala en el mapa');
     if (!name) return flashErrorMessage('Ingresa tu nombre');
-    // Teléfono es opcional ahora
     if (phone && !phone.startsWith('2284')) return flashErrorMessage('Si completas teléfono, debe empezar con 2284 (Olavarría)');
 
     const claimId = 'OLV-' + new Date().getFullYear() + '-' + Math.floor(Math.random() * 10000).toString().padStart(4, '0');
 
+    // 🆕 doc principal SIN "photo" — solo el flag liviano hasPhoto
     const claimData = {
         id: Date.now(),
         claimId: claimId,
@@ -684,7 +703,7 @@ async function executeSubmitForm() {
         description: document.getElementById('claimDescription').value.trim(),
         lat: location.lat,
         lng: location.lng,
-        photo: state.currentPhoto || null,
+        hasPhoto: !!state.currentPhoto, // 🆕
         phone: phone,
         status: 'pending',
         adhesions: 0,
@@ -697,23 +716,32 @@ async function executeSubmitForm() {
     btn.textContent = 'Enviando...';
 
     try {
-        const { collection, addDoc } = window.dbMethods;
+        const { collection, addDoc, doc, setDoc } = window.dbMethods;
         const docRef = await addDoc(collection(window.db, "reclamos"), claimData);
         claimData._fbId = docRef.id;
+
+        // 🆕 si hay foto, se guarda aparte en la subcolección
+        if (state.currentPhoto) {
+            try {
+                await setDoc(doc(window.db, "reclamos", docRef.id, "media", "foto"), {
+                    photo: state.currentPhoto
+                });
+                state.photoCache[docRef.id] = state.currentPhoto; // ya la tenemos, no hace falta re-pedirla
+            } catch (photoError) {
+                console.error('Error guardando la foto:', photoError);
+                // No bloqueamos el reclamo por esto — el reclamo ya se creó bien
+            }
+        }
 
         if (state.isAdmin) {
             state.adminClaims.push(claimData);
             syncAdminDashboard();
         } else {
-            // Se guarda SOLO en memoria de esta pestaña. Si la persona recarga
-            // o vuelve a entrar más tarde, este pin gris ya no va a aparecer
-            // (es intencional: es un "quedate tranquilo", no un tracking).
             state.mySessionPendingClaims.push(claimData);
         }
 
         renderMapPins();
 
-        // Pantalla de éxito clara en vez de un cartelito chico que desaparece solo.
         document.getElementById('claimFormBody').style.display = 'none';
         document.getElementById('formSuccessView').style.display = 'block';
         document.getElementById('submitBtn').style.display = 'none';
@@ -930,9 +958,27 @@ function globalOpenDetailWindow(fbId) {
 
    let html = '';
 
+    // 🆕 Detección de formato: reclamos viejos tienen "photo" inline en el doc.
+// Reclamos nuevos NO tienen ese campo, tienen "hasPhoto" + subcolección media/foto.
+const isOldFormat = Object.prototype.hasOwnProperty.call(claim, 'photo');
+const cacheHasEntry = Object.prototype.hasOwnProperty.call(state.photoCache, fbId);
+
+if (isOldFormat) {
+    // Compatibilidad con reclamos antiguos: la foto ya viene inline, se muestra directo.
     if (claim.photo) {
         html += `<div class="detail-card"><img src="${claim.photo}" class="detail-img"></div>`;
     }
+} else if (claim.hasPhoto) {
+    if (cacheHasEntry && state.photoCache[fbId]) {
+        html += `<div class="detail-card"><img src="${state.photoCache[fbId]}" class="detail-img"></div>`;
+    } else if (!cacheHasEntry) {
+        html += `<div class="detail-card" id="detailPhotoContainer" data-fbid="${fbId}">
+            <div style="padding:30px; text-align:center; color:#64748b; font-size:12px; font-weight:600;">⏳ Cargando imagen...</div>
+        </div>`;
+    }
+    // si cacheHasEntry es true pero el valor es null, significa que ya consultamos
+    // y no hay foto -> no mostramos nada, sin volver a pedir.
+}
 
     // ID solo visible para admin
     if (state.isAdmin) {
@@ -1139,7 +1185,21 @@ function globalOpenDetailWindow(fbId) {
             toggleEditBtn.textContent = '✏️ Editar antes de procesar';
         });
     }
+       // 🆕 Si la foto no estaba en cache, la pedimos ahora — solo la de ESTE reclamo.
+       if (!isOldFormat && claim.hasPhoto && !cacheHasEntry) {
+     const collectionName = state.isAdmin ? 'reclamos' : 'reclamos_publicos';
+       fetchClaimPhoto(fbId, collectionName).then((photo) => {
+        const container = document.getElementById('detailPhotoContainer');
+        // Si el usuario ya cerró el detalle o abrió otro reclamo, no tocamos nada
+        if (!container || container.dataset.fbid !== fbId) return;
 
+        if (photo) {
+            container.outerHTML = `<div class="detail-card"><img src="${photo}" class="detail-img"></div>`;
+        } else {
+            container.remove();
+        }
+    });
+}
     state.map.closePopup();
     document.getElementById('recentClaimsPopup').classList.add('hidden');
 }
@@ -1211,7 +1271,7 @@ async function dispatchStatus(fbId, newStatus) {
     if (!claim) return;
 
     try {
-        const { doc, updateDoc, setDoc, deleteDoc } = window.dbMethods;
+        const { doc, updateDoc, setDoc, deleteDoc, getDoc } = window.dbMethods;
 
         await updateDoc(doc(window.db, "reclamos", fbId), { status: newStatus });
         claim.status = newStatus;
@@ -1219,7 +1279,9 @@ async function dispatchStatus(fbId, newStatus) {
         const publicRef = doc(window.db, "reclamos_publicos", fbId);
 
         if (newStatus === 'approved' || newStatus === 'solved') {
-            await setDoc(publicRef, {
+            const isOldFormat = Object.prototype.hasOwnProperty.call(claim, 'photo');
+
+            const publicData = {
                 claimId: claim.claimId,
                 title: claim.title,
                 category: claim.category,
@@ -1227,11 +1289,35 @@ async function dispatchStatus(fbId, newStatus) {
                 description: claim.description || '',
                 lat: claim.lat,
                 lng: claim.lng,
-                photo: claim.photo || null,
                 status: newStatus,
                 adhesions: claim.adhesions || 0,
                 createdAt: claim.createdAt
-            });
+            };
+
+            if (isOldFormat) {
+                // 🆕 Compatibilidad: reclamo viejo, mantenemos photo inline como siempre
+                publicData.photo = claim.photo || null;
+            } else {
+                // 🆕 Reclamo nuevo: NO va photo inline, va el flag liviano
+                publicData.hasPhoto = !!claim.hasPhoto;
+            }
+
+            await setDoc(publicRef, publicData);
+
+            // 🆕 Si es formato nuevo y tiene foto, copiamos el subdocumento media/foto
+            if (!isOldFormat && claim.hasPhoto) {
+                try {
+                    const sourceMediaRef = doc(window.db, "reclamos", fbId, "media", "foto");
+                    const mediaSnap = await getDoc(sourceMediaRef);
+                    if (mediaSnap.exists()) {
+                        const destMediaRef = doc(window.db, "reclamos_publicos", fbId, "media", "foto");
+                        await setDoc(destMediaRef, mediaSnap.data());
+                        state.photoCache[fbId] = mediaSnap.data().photo || null;
+                    }
+                } catch (mediaError) {
+                    console.error('Error copiando la foto al documento público:', mediaError);
+                }
+            }
         } else {
             try { await deleteDoc(publicRef); } catch (e) { /* puede no existir todavía, ok */ }
         }
@@ -1261,8 +1347,13 @@ async function deleteClaimFromDatabase(fbId) {
         await deleteDoc(doc(window.db, "reclamos", fbId));
         try { await deleteDoc(doc(window.db, "reclamos_publicos", fbId)); } catch (e) { /* puede no existir, ok */ }
 
+        // 🆕 Limpieza best-effort de las subcolecciones de foto (no rompe si no existen)
+        try { await deleteDoc(doc(window.db, "reclamos", fbId, "media", "foto")); } catch (e) {}
+        try { await deleteDoc(doc(window.db, "reclamos_publicos", fbId, "media", "foto")); } catch (e) {}
+
         state.adminClaims = state.adminClaims.filter(c => c._fbId !== fbId);
         state.claims = state.claims.filter(c => c._fbId !== fbId);
+        delete state.photoCache[fbId]; // 🆕
 
         renderPublicClaimsList();
         renderMapPins();
