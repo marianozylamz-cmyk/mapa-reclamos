@@ -1271,15 +1271,28 @@ async function dispatchStatus(fbId, newStatus) {
     if (!claim) return;
 
     try {
-        const { doc, updateDoc, setDoc, deleteDoc, getDoc } = window.dbMethods;
+        const {
+            doc,
+            updateDoc,
+            setDoc,
+            deleteDoc,
+            getDoc
+        } = window.dbMethods;
 
-        await updateDoc(doc(window.db, "reclamos", fbId), { status: newStatus });
-        claim.status = newStatus;
-
+        const claimRef = doc(window.db, "reclamos", fbId);
         const publicRef = doc(window.db, "reclamos_publicos", fbId);
 
+        // 1. Actualizar estado del reclamo privado
+        await updateDoc(claimRef, {
+            status: newStatus
+        });
+
+        claim.status = newStatus;
+
+        // 2. Publicar o quitar el reclamo público
         if (newStatus === 'approved' || newStatus === 'solved') {
-            const isOldFormat = Object.prototype.hasOwnProperty.call(claim, 'photo');
+            const isOldFormat =
+                Object.prototype.hasOwnProperty.call(claim, 'photo');
 
             const publicData = {
                 claimId: claim.claimId,
@@ -1294,44 +1307,105 @@ async function dispatchStatus(fbId, newStatus) {
                 createdAt: claim.createdAt
             };
 
+            // Reclamos antiguos: foto dentro del documento principal
             if (isOldFormat) {
-                // 🆕 Compatibilidad: reclamo viejo, mantenemos photo inline como siempre
                 publicData.photo = claim.photo || null;
-            } else {
-                // 🆕 Reclamo nuevo: NO va photo inline, va el flag liviano
-                publicData.hasPhoto = !!claim.hasPhoto;
             }
 
+            // Reclamos nuevos: foto dentro de media/foto
+            if (!isOldFormat) {
+                publicData.hasPhoto = claim.hasPhoto === true;
+            }
+
+            // Crear o actualizar documento público
             await setDoc(publicRef, publicData);
 
-            // 🆕 Si es formato nuevo y tiene foto, copiamos el subdocumento media/foto
-            if (!isOldFormat && claim.hasPhoto) {
-                try {
-                    const sourceMediaRef = doc(window.db, "reclamos", fbId, "media", "foto");
-                    const mediaSnap = await getDoc(sourceMediaRef);
-                    if (mediaSnap.exists()) {
-                        const destMediaRef = doc(window.db, "reclamos_publicos", fbId, "media", "foto");
-                        await setDoc(destMediaRef, mediaSnap.data());
-                        state.photoCache[fbId] = mediaSnap.data().photo || null;
-                    }
-                } catch (mediaError) {
-                    console.error('Error copiando la foto al documento público:', mediaError);
+            // Copiar imagen del reclamo privado al público
+            if (!isOldFormat && claim.hasPhoto === true) {
+                const sourceMediaRef = doc(
+                    window.db,
+                    "reclamos",
+                    fbId,
+                    "media",
+                    "foto"
+                );
+
+                const mediaSnap = await getDoc(sourceMediaRef);
+
+                if (!mediaSnap.exists()) {
+                    throw new Error(
+                        'No existe la foto en reclamos/{id}/media/foto'
+                    );
                 }
+
+                const mediaData = mediaSnap.data();
+
+                if (!mediaData.photo) {
+                    throw new Error(
+                        'El documento media/foto no contiene el campo photo'
+                    );
+                }
+
+                const destMediaRef = doc(
+                    window.db,
+                    "reclamos_publicos",
+                    fbId,
+                    "media",
+                    "foto"
+                );
+
+                await setDoc(destMediaRef, {
+                    photo: mediaData.photo
+                });
+
+                state.photoCache[fbId] = mediaData.photo;
+
+                console.log('✅ Foto copiada al documento público');
             }
+
+            console.log('✅ Reclamo publicado correctamente');
         } else {
-            try { await deleteDoc(publicRef); } catch (e) { /* puede no existir todavía, ok */ }
+            // Si se rechaza, eliminar el documento público
+            await deleteDoc(publicRef);
+
+            // Eliminar también la foto pública
+            const publicPhotoRef = doc(
+                window.db,
+                "reclamos_publicos",
+                fbId,
+                "media",
+                "foto"
+            );
+
+            try {
+                await deleteDoc(publicPhotoRef);
+            } catch (photoError) {
+                console.warn(
+                    'No se pudo eliminar la foto pública:',
+                    photoError
+                );
+            }
+
+            delete state.photoCache[fbId];
+
+            console.log('✅ Reclamo retirado de la vista pública');
         }
 
+        // 3. Recargar la interfaz
         await loadPublicClaims();
         renderPublicClaimsList();
         renderMapPins();
         syncAdminDashboard();
-        document.getElementById('detailPanel').classList.remove('visible');
 
-        console.log(`✓ Estado actualizado: ${newStatus}`);
+        document
+            .getElementById('detailPanel')
+            .classList.remove('visible');
+
+        console.log(`✅ Estado actualizado: ${newStatus}`);
+
     } catch (error) {
-        console.error("Error:", error);
-        alert("No se pudo guardar el cambio.");
+        console.error('❌ Error actualizando el reclamo:', error);
+        alert(`No se pudo guardar el cambio:\n${error.message}`);
     }
 }
 
