@@ -1771,8 +1771,22 @@ function initPoliticalCounter() {
     const block = document.querySelector('.political-counter');
     if (block) {
         block.style.cursor = 'pointer';
-        block.addEventListener('dblclick', () => {
-            document.getElementById('adminLoginModal').classList.remove('hidden');
+        // No usamos el evento nativo 'dblclick': con touch-action:manipulation
+        // (necesario para sacar el zoom por doble-tap accidental en el resto del
+        // sitio) los navegadores mobile dejan de sintetizar 'dblclick' a partir de
+        // dos toques, así que el doble-tap nunca llegaba a disparar nada en el
+        // celular. Detectamos el "doble toque" a mano por tiempo entre 'click'
+        // (que sí dispara igual con mouse y con touch), y funciona igual en ambos.
+        let lastTapAt = 0;
+        const DOUBLE_TAP_MS = 450;
+        block.addEventListener('click', () => {
+            const now = Date.now();
+            if (now - lastTapAt < DOUBLE_TAP_MS) {
+                document.getElementById('adminLoginModal').classList.remove('hidden');
+                lastTapAt = 0;
+            } else {
+                lastTapAt = now;
+            }
         });
     }
 }
