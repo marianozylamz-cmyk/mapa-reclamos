@@ -1,0 +1,96 @@
+rules_version = '2';
+
+// Reglas de seguridad para el proyecto Firebase "arreglame-esto-olavarria".
+//
+// Contexto: la app (index.html/app.js) escribe DIRECTO a Firestore desde el
+// navegador, sin backend intermedio. Todo el "modo admin" que se ve en la UI
+// (state.isAdmin en app.js) es solo para mostrar/ocultar botones — la única
+// barrera de seguridad real es lo que estas reglas permiten o no.
+//
+// Modelo de datos:
+//   /reclamos/{id}                 privada — nombre y teléfono del vecino, todos
+//                                   los estados (pending/approved/rejected/solved)
+//   /reclamos/{id}/media/foto      foto del reclamo privado
+//   /reclamos_publicos/{id}        pública — SIN nombre/teléfono, solo reclamos
+//                                   approved/solved (la publica el admin)
+//   /reclamos_publicos/{id}/media/foto  foto del reclamo público
+//
+// IMPORTANTE: esto no fue probado contra el proyecto real (no tengo acceso al
+// simulador/consola de Firebase desde acá). Antes de desplegar:
+//   1. Revisar con el Rules Playground de la consola de Firebase.
+//   2. Probar el flujo completo (crear reclamo con y sin foto, aprobar,
+//      rechazar, adherir, editar) contra un proyecto de staging si existe.
+//   3. Recién ahí: firebase deploy --only firestore:rules
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAdmin() {
+      return request.auth != null && request.auth.token.admin == true;
+    }
+
+    function isAdhesionIncrement() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['adhesions']) &&
+             request.resource.data.adhesions is int &&
+             request.resource.data.adhesions == resource.data.adhesions + 1;
+    }
+
+    // -----------------------------------------------------------------
+    // reclamos (privada, con PII) — el vecino puede CREAR su propio
+    // reclamo (schema validado), pero solo el admin puede leer, listar,
+    // actualizar (aprobar/rechazar/editar) o borrar.
+    // -----------------------------------------------------------------
+    match /reclamos/{claimId} {
+      allow get, list: if isAdmin();
+      allow update, delete: if isAdmin();
+
+      allow create: if
+        request.resource.data.status == 'pending' &&
+        request.resource.data.adhesions == 0 &&
+        request.resource.data.title is string &&
+        request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 200 &&
+        request.resource.data.name is string &&
+        request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 120 &&
+        request.resource.data.category is string &&
+        request.resource.data.category.size() > 0 &&
+        request.resource.data.description is string &&
+        request.resource.data.description.size() <= 2000 &&
+        request.resource.data.address is string &&
+        request.resource.data.address.size() <= 300 &&
+        request.resource.data.phone is string &&
+        request.resource.data.phone.size() <= 30 &&
+        request.resource.data.lat is number &&
+        request.resource.data.lng is number;
+
+      // 🆕 Foto del reclamo pendiente: el vecino (sin login) la crea UNA vez
+      // al mandar el reclamo. No puede leerla de vuelta, ni pisarla, ni tocar otra.
+      match /media/{mediaId} {
+        allow create: if mediaId == 'foto'
+                      && resource == null
+                      && request.resource.data.keys().hasOnly(['photo'])
+                      && request.resource.data.photo is string
+                      && request.resource.data.photo.size() < 1500000;
+        allow read: if isAdmin();
+        allow update, delete: if isAdmin();
+      }
+    }
+
+    // -----------------------------------------------------------------
+    // reclamos_publicos (sin PII) — lectura pública total. Solo el admin
+    // puede crear/publicar/borrar. La ÚNICA escritura anónima permitida
+    // es sumar exactamente +1 a "adhesions" (nada más puede cambiar en
+    // el mismo write) — así una adhesión no puede reescribir título,
+    // estado, ubicación, etc. de un reclamo ajeno.
+    // -----------------------------------------------------------------
+    match /reclamos_publicos/{claimId} {
+      allow get, list: if true;
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || isAdhesionIncrement();
+
+      match /media/{mediaId} {
+        allow get, list: if true;
+        allow create, update, delete: if isAdmin();
+      }
+    }
+  }
+}

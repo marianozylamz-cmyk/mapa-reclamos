@@ -73,7 +73,8 @@ const state = {
     claims: [],
     adminClaims: [],
     mySessionPendingClaims: [],
-    photoCache: {}, // 🆕 fbId -> base64 | null (null = "ya consultamos, no tiene foto")
+    photoCache: {}, // fbId -> base64 | null (null = "ya consultamos, no tiene foto")
+    photoFetchPromises: {}, // fbId -> Promise en curso (dedup de clicks rápidos)
     map: null,
     clusterGroup: null,
     markers: [],
@@ -88,6 +89,7 @@ const state = {
 document.addEventListener('DOMContentLoaded', async () => {
     initAuthListener();
     await loadPublicClaims();
+    state.mySessionPendingClaims = pruneResolvedLocalTrackedClaims();
     initLeafletMap();
     setupApplicationEvents();
     renderPublicClaimsList();
@@ -194,6 +196,45 @@ function escapeHtml(str) {
         .replace(/'/g, '&#039;');
 }
 
+// ---------------------------------------------------------------------------
+// SEGUIMIENTO LOCAL DE "MIS RECLAMOS"
+// Los reclamos pendientes solo existen en memoria (`mySessionPendingClaims`) hasta
+// que un admin los aprueba/rechaza — el ciudadano no tiene permiso de leer la
+// colección privada "reclamos". Para que no se pierdan al refrescar la página o
+// cerrar la pestaña, los guardamos localmente en este mismo navegador.
+// ---------------------------------------------------------------------------
+
+const MY_CLAIMS_STORAGE_KEY = 'mp_my_pending_claims';
+
+function saveClaimToLocalTracking(claimData) {
+    try {
+        const list = JSON.parse(localStorage.getItem(MY_CLAIMS_STORAGE_KEY) || '[]');
+        list.push(claimData);
+        localStorage.setItem(MY_CLAIMS_STORAGE_KEY, JSON.stringify(list));
+    } catch (e) {
+        // localStorage lleno/deshabilitado: no bloqueamos el envío del reclamo por esto
+    }
+}
+
+function loadLocalTrackedClaims() {
+    try {
+        return JSON.parse(localStorage.getItem(MY_CLAIMS_STORAGE_KEY) || '[]');
+    } catch (e) {
+        return [];
+    }
+}
+
+// Si un reclamo trackeado localmente ya aparece como público (fue aprobado o
+// solucionado), dejamos de mostrarlo como "pendiente" — ya se ve normal en el mapa.
+function pruneResolvedLocalTrackedClaims() {
+    const publicClaimIds = new Set(state.claims.map(c => c.claimId));
+    const remaining = loadLocalTrackedClaims().filter(c => !publicClaimIds.has(c.claimId));
+    try {
+        localStorage.setItem(MY_CLAIMS_STORAGE_KEY, JSON.stringify(remaining));
+    } catch (e) { /* ignorar */ }
+    return remaining;
+}
+
 function findClaimById(fbId) {
     if (state.isAdmin) {
         const fromAdmin = state.adminClaims.find(c => c._fbId === fbId);
@@ -207,6 +248,12 @@ function findClaimById(fbId) {
 function handleDeepLinking() {
     const params = new URLSearchParams(window.location.search);
     const claimId = params.get('claim');
+
+    // Entrada directa y "bookmarkeable" al login admin (?admin=1), en vez de depender
+    // únicamente del link discreto del footer.
+    if (params.get('admin') === '1') {
+        document.getElementById('adminLoginModal').classList.remove('hidden');
+    }
 
     if (claimId) {
         const claim = state.claims.find(c => c.claimId === claimId);
@@ -243,7 +290,7 @@ function initLeafletMap() {
     // Los reclamos aprobados van agrupados (clustering) para que no se amontonen
     // en el mapa cuando hay muchos cerca. Ver leaflet.markercluster en index.html.
    state.clusterGroup = L.markerClusterGroup({
-    maxClusterRadius: 5,
+    maxClusterRadius: 60,
     spiderfyOnMaxZoom: true,
     showCoverageOnHover: false,
     iconCreateFunction: function(cluster) {
@@ -344,16 +391,33 @@ function showMapClickModal(lat, lng) {
     });
 }
 
+function openNewClaimFlow() {
+    state.currentLocation = null;
+    state.selectedCategory = null;
+    state.currentPhoto = null;
+    openClaimModal();
+}
+
 function setupApplicationEvents() {
-    document.getElementById('newClaimBtn').addEventListener('click', () => {
-        state.currentLocation = null;
-        state.selectedCategory = null;
-        state.currentPhoto = null;
-        openClaimModal();
+    document.getElementById('newClaimBtn').addEventListener('click', openNewClaimFlow);
+    const fab = document.getElementById('newClaimFab');
+    if (fab) fab.addEventListener('click', openNewClaimFlow);
+
+    const adminEntryLink = document.getElementById('adminEntryLink');
+    if (adminEntryLink) {
+        adminEntryLink.addEventListener('click', () => {
+            document.getElementById('adminLoginModal').classList.remove('hidden');
+        });
+    }
+
+    document.getElementById('retryLoadBtn')?.addEventListener('click', async () => {
+        await loadPublicClaims();
+        renderMapPins();
+        renderPublicClaimsList();
     });
 
-    document.getElementById('closeModal').addEventListener('click', closeClaimModal);
-    document.getElementById('closeModalBtn').addEventListener('click', closeClaimModal);
+    document.getElementById('closeModal').addEventListener('click', requestCloseClaimModal);
+    document.getElementById('closeModalBtn').addEventListener('click', requestCloseClaimModal);
     document.getElementById('successCloseBtn').addEventListener('click', closeClaimModal);
     document.getElementById('closeDetail').addEventListener('click', () => {
         document.getElementById('detailPanel').classList.remove('visible');
@@ -474,6 +538,27 @@ function openMapClickModal() {
         modal.classList.remove('hidden');
         state.mapClickLocation = null;
     };
+}
+
+function formHasContent() {
+    return !!(
+        document.getElementById('claimTitle').value.trim() ||
+        document.getElementById('claimDescription').value.trim() ||
+        document.getElementById('claimName').value.trim() ||
+        document.getElementById('claimPhone').value.trim() ||
+        document.getElementById('claimAddress').value.trim() ||
+        state.selectedCategory ||
+        state.currentPhoto ||
+        state.currentLocation
+    );
+}
+
+function requestCloseClaimModal() {
+    const successVisible = document.getElementById('formSuccessView').style.display === 'block';
+    if (!successVisible && formHasContent()) {
+        if (!confirm('¿Descartar este reclamo? Vas a perder lo que escribiste.')) return;
+    }
+    closeClaimModal();
 }
 
 function closeClaimModal() {
@@ -645,22 +730,95 @@ function compressImage(file, maxWidth = 1600) {
     });
 }
 
+// Devuelve { photo, error }. Cachea resultados exitosos (incluido "no tiene foto" = null).
+// Los errores NO se cachean (para poder reintentar) y las llamadas concurrentes para el
+// mismo fbId comparten la misma promesa en vuelo, así un click rápido en "Ver detalles"
+// justo después de abrir el popup nunca dispara una segunda descarga.
 async function fetchClaimPhoto(fbId, collectionName) {
     if (Object.prototype.hasOwnProperty.call(state.photoCache, fbId)) {
-        return state.photoCache[fbId]; // ya está en cache (aunque sea null)
+        return { photo: state.photoCache[fbId], error: false };
     }
-    try {
-        const { doc, getDoc } = window.dbMethods;
-        const mediaRef = doc(window.db, collectionName, fbId, 'media', 'foto');
-        const snap = await getDoc(mediaRef);
-        const photo = snap.exists() ? (snap.data().photo || null) : null;
-        state.photoCache[fbId] = photo;
-        return photo;
-    } catch (error) {
-        console.error('Error obteniendo la foto del reclamo:', error);
-        return null; // no cacheamos el error para poder reintentar
+    if (state.photoFetchPromises[fbId]) {
+        return state.photoFetchPromises[fbId];
     }
+
+    const promise = (async () => {
+        try {
+            const { doc, getDoc } = window.dbMethods;
+            const mediaRef = doc(window.db, collectionName, fbId, 'media', 'foto');
+            const snap = await getDoc(mediaRef);
+            const photo = snap.exists() ? (snap.data().photo || null) : null;
+            state.photoCache[fbId] = photo;
+            return { photo, error: false };
+        } catch (error) {
+            console.error('Error obteniendo la foto del reclamo:', error);
+            return { photo: null, error: true };
+        } finally {
+            delete state.photoFetchPromises[fbId];
+        }
+    })();
+
+    state.photoFetchPromises[fbId] = promise;
+    return promise;
 }
+
+// Carga la foto de un reclamo dentro de un contenedor de POPUP identificado por
+// [data-fbid]. Se dispara al abrir el popup (no antes). Si el usuario ya cerró el
+// popup o abrió otro reclamo cuando la respuesta llega, el contenedor ya no está en
+// el DOM (Leaflet lo saca al cerrar) y la actualización se descarta sola.
+function loadPopupPhoto(claim, collectionName) {
+    const fbId = claim._fbId;
+    const selector = `.popup-img-placeholder[data-fbid="${fbId}"]`;
+    if (!document.querySelector(selector)) return;
+
+    fetchClaimPhoto(fbId, collectionName).then(({ photo, error }) => {
+        const el = document.querySelector(selector);
+        if (!el) return; // el popup ya no está abierto / cambió de reclamo
+
+        if (photo) {
+            el.outerHTML = `<div class="popup-img-container"><img src="${photo}" class="popup-mini-img" alt="Foto del reclamo"></div>`;
+        } else if (error) {
+            el.classList.remove('popup-img-loading');
+            el.innerHTML = `<button type="button" class="popup-photo-retry" onclick="retryPopupPhoto('${fbId}', '${collectionName}')">⚠️ No se pudo cargar. Reintentar</button>`;
+        } else {
+            el.remove(); // ya consultamos: no tiene foto
+        }
+    });
+}
+
+window.retryPopupPhoto = function (fbId, collectionName) {
+    const selector = `.popup-img-placeholder[data-fbid="${fbId}"]`;
+    const el = document.querySelector(selector);
+    if (!el) return;
+    el.classList.add('popup-img-loading');
+    el.innerHTML = '<div class="popup-img-spinner">⏳</div>';
+    loadPopupPhoto({ _fbId: fbId }, collectionName);
+};
+
+window.retryDetailPhoto = function (fbId, collectionName) {
+    const container = document.getElementById('detailPhotoContainer');
+    if (!container || container.dataset.fbid !== fbId) return;
+    container.outerHTML = `<div class="detail-card" id="detailPhotoContainer" data-fbid="${fbId}">
+        <div style="padding:30px; text-align:center; color:#64748b; font-size:12px; font-weight:600;">⏳ Cargando imagen...</div>
+    </div>`;
+    fetchClaimPhoto(fbId, collectionName).then(({ photo, error }) => {
+        const el = document.getElementById('detailPhotoContainer');
+        if (!el || el.dataset.fbid !== fbId) return;
+        if (photo) {
+            el.outerHTML = `<div class="detail-card"><img src="${photo}" class="detail-img" alt="Foto del reclamo"></div>`;
+        } else if (error) {
+            el.outerHTML = `
+                <div class="detail-card detail-photo-error" id="detailPhotoContainer" data-fbid="${fbId}">
+                    <div style="padding:20px; text-align:center; color:#991b1b; font-size:12px; font-weight:600;">
+                        ⚠️ No se pudo cargar la imagen.
+                        <button type="button" class="popup-photo-retry" onclick="retryDetailPhoto('${fbId}', '${collectionName}')">Reintentar</button>
+                    </div>
+                </div>`;
+        } else {
+            el.remove();
+        }
+    });
+};
 
 function clearPhotoEvidencia() {
     state.currentPhoto = null;
@@ -674,6 +832,11 @@ function clearPhotoEvidencia() {
 // CREAR RECLAMO
 // ---------------------------------------------------------------------------
 
+function isPlausiblePhone(phone) {
+    const digits = phone.replace(/\D/g, '');
+    return digits.length >= 8 && digits.length <= 13;
+}
+
 async function executeSubmitForm() {
     const title = document.getElementById('claimTitle').value.trim();
     const name = document.getElementById('claimName').value.trim();
@@ -686,7 +849,7 @@ async function executeSubmitForm() {
     if (!category) return flashErrorMessage('Selecciona una categoría');
     if (!location) return flashErrorMessage('⚠️ Debes seleccionar ubicación: Usa GPS o señala en el mapa');
     if (!name) return flashErrorMessage('Ingresa tu nombre');
-    if (phone && !phone.startsWith('2284')) return flashErrorMessage('Si completas teléfono, debe empezar con 2284 (Olavarría)');
+    if (phone && !isPlausiblePhone(phone)) return flashErrorMessage('Ingresa un teléfono válido (con o sin código de área)');
 
     const claimId = 'OLV-' + new Date().getFullYear() + '-' + Math.floor(Math.random() * 10000).toString().padStart(4, '0');
 
@@ -738,10 +901,12 @@ async function executeSubmitForm() {
             syncAdminDashboard();
         } else {
             state.mySessionPendingClaims.push(claimData);
+            saveClaimToLocalTracking(claimData);
         }
 
         renderMapPins();
 
+        document.getElementById('successClaimId').textContent = claimId;
         document.getElementById('claimFormBody').style.display = 'none';
         document.getElementById('formSuccessView').style.display = 'block';
         document.getElementById('submitBtn').style.display = 'none';
@@ -806,7 +971,34 @@ function getPrioritySvg(adhesions) {
 // ADHESIÓN
 // ---------------------------------------------------------------------------
 
+const ADHESION_STORAGE_KEY = 'mp_adhered_claims';
+
+function getAdheredClaimIds() {
+    try {
+        return JSON.parse(localStorage.getItem(ADHESION_STORAGE_KEY) || '[]');
+    } catch (e) {
+        return [];
+    }
+}
+
+function hasAdheredTo(fbId) {
+    return getAdheredClaimIds().includes(fbId);
+}
+
+function markClaimAdhered(fbId) {
+    const ids = getAdheredClaimIds();
+    if (!ids.includes(fbId)) {
+        ids.push(fbId);
+        try { localStorage.setItem(ADHESION_STORAGE_KEY, JSON.stringify(ids)); } catch (e) { /* localStorage lleno/deshabilitado, no bloqueamos la adhesión por esto */ }
+    }
+}
+
 async function addAdhesion(claimId) {
+    if (hasAdheredTo(claimId)) {
+        alert('Ya adheriste a este reclamo desde este dispositivo. ¡Gracias!');
+        return;
+    }
+
     document.getElementById('detailPanel').classList.remove('visible');
 
     const modal = document.getElementById('adhesionModal');
@@ -834,6 +1026,7 @@ async function addAdhesion(claimId) {
             const docRef = doc(window.db, "reclamos_publicos", claimId);
             await updateDoc(docRef, { adhesions: newCount });
             claim.adhesions = newCount;
+            markClaimAdhered(claimId);
 
             document.getElementById('adhesionName').value = '';
             modal.classList.add('hidden');
@@ -894,10 +1087,22 @@ function renderMapPins() {
 
 const marker = L.marker([claim.lat, claim.lng], { icon, claimData: claim });
 
+        // No se descarga ninguna imagen acá (esto corre para TODOS los pines al
+        // renderizar el mapa). Si el reclamo es formato nuevo (hasPhoto), solo
+        // dejamos un placeholder — la foto real se pide recién cuando se abre
+        // el popup (ver marker.on('popupopen', ...) más abajo).
+        const isOldFormat = Object.prototype.hasOwnProperty.call(claim, 'photo');
+        const needsLazyPhoto = !isOldFormat && claim.hasPhoto;
+        const imgHTML = isOldFormat && claim.photo
+            ? `<div class="popup-img-container"><img src="${claim.photo}" class="popup-mini-img" alt="Foto del reclamo"></div>`
+            : (needsLazyPhoto
+                ? `<div class="popup-img-container popup-img-placeholder popup-img-loading" data-fbid="${claim._fbId}"><div class="popup-img-spinner">⏳</div></div>`
+                : '');
+
         const locText = escapeHtml(claim.address || `${claim.lat?.toFixed(4)}, ${claim.lng?.toFixed(4)}`);
         const popupHTML = `
             <div class="custom-popup">
-                ${claim.photo ? `<div class="popup-img-container"><img src="${claim.photo}" class="popup-mini-img"></div>` : ''}
+                ${imgHTML}
                 <div class="popup-title">${escapeHtml(claim.title || claim.claimId)}</div>
                 <div class="popup-meta">${locText}</div>
                 <div class="popup-time">${priorityLabel}</div>
@@ -906,6 +1111,9 @@ const marker = L.marker([claim.lat, claim.lng], { icon, claimData: claim });
         `;
 
         marker.bindPopup(popupHTML);
+        if (needsLazyPhoto) {
+            marker.on('popupopen', () => loadPopupPhoto(claim, 'reclamos_publicos'));
+        }
         state.clusterGroup.addLayer(marker);
     });
 
@@ -929,9 +1137,18 @@ const marker = L.marker([claim.lat, claim.lng], { icon, claimData: claim });
 
         const marker = L.marker([claim.lat, claim.lng], { icon, opacity: 0.85 }).addTo(state.map);
 
+        const isOldFormat = Object.prototype.hasOwnProperty.call(claim, 'photo');
+        const needsLazyPhoto = state.isAdmin && !isOldFormat && claim.hasPhoto;
+        const imgHTML = state.isAdmin && isOldFormat && claim.photo
+            ? `<div class="popup-img-container"><img src="${claim.photo}" class="popup-mini-img" alt="Foto del reclamo"></div>`
+            : (needsLazyPhoto
+                ? `<div class="popup-img-container popup-img-placeholder popup-img-loading" data-fbid="${claim._fbId}"><div class="popup-img-spinner">⏳</div></div>`
+                : '');
+
         const popupHTML = state.isAdmin
             ? `
                 <div class="custom-popup">
+                    ${imgHTML}
                     <div class="popup-title">${escapeHtml(claim.title || claim.claimId)}</div>
                     <div class="popup-meta">⏳ Pendiente de revisión</div>
                     <button class="btn-popup-more" onclick="globalOpenDetailWindow('${claim._fbId}')">Inspeccionar</button>
@@ -945,6 +1162,9 @@ const marker = L.marker([claim.lat, claim.lng], { icon, claimData: claim });
             `;
 
         marker.bindPopup(popupHTML);
+        if (needsLazyPhoto) {
+            marker.on('popupopen', () => loadPopupPhoto(claim, 'reclamos'));
+        }
         state.markers.push(marker);
     });
 }
@@ -1044,13 +1264,14 @@ if (isOldFormat) {
     }
 
     if (claim.status === 'approved' || claim.status === 'solved') {
+        const alreadyAdhered = hasAdheredTo(claim._fbId);
         html += `
             <div class="adhesion-section">
                 <div class="adhesion-count">
                     <div class="adhesion-number">${claim.adhesions || 0}</div>
                     <div class="adhesion-label">vecino${(claim.adhesions || 0) !== 1 ? 's' : ''} adhieren</div>
                 </div>
-                <button class="btn-adhesion" onclick="addAdhesion('${claim._fbId}')">Adherir</button>
+                <button class="btn-adhesion" ${alreadyAdhered ? 'disabled' : ''} onclick="addAdhesion('${claim._fbId}')">${alreadyAdhered ? '✅ Ya adheriste' : 'Adherir'}</button>
             </div>
         `;
 
@@ -1087,10 +1308,16 @@ if (isOldFormat) {
             html += `
                 <div class="detail-actions">
                     <button class="btn-action" style="background:#8b5cf6; color:white;" onclick="dispatchStatus('${claim._fbId}', 'solved')">🛠️ Solucionado</button>
-                    <button class="btn-action btn-reject" onclick="deleteClaimFromDatabase('${claim._fbId}')">🗑️ Borrar</button>
                 </div>
             `;
         }
+        // Borrado definitivo disponible en cualquier estado (antes solo existía
+        // para 'approved' — los rechazados/pendientes quedaban acumulados para siempre).
+        html += `
+            <div class="detail-actions">
+                <button class="btn-action btn-reject" onclick="deleteClaimFromDatabase('${claim._fbId}')">🗑️ Borrar definitivamente</button>
+            </div>
+        `;
     }
 // Centrar mapa en el reclamo y resaltar
     if (state.map) {
@@ -1115,43 +1342,43 @@ if (isOldFormat) {
             });
         }, 100);
     }
-    // Admin puede editar si está en pending
-    let editingClaimId = null;
-    if (state.isAdmin && claim.status === 'pending') {
+    // Admin puede editar en cualquier estado (antes solo se podía en 'pending', lo
+    // que forzaba un rechazo+recreación para corregir un typo post-aprobación).
+    if (state.isAdmin) {
         html += `
             <div style="text-align:center; padding:8px;">
-                <button id="toggleEditModeBtn" style="background:#8b5cf6; color:white; border:none; padding:6px 12px; border-radius:6px; font-weight:600; font-size:11px; cursor:pointer;">✏️ Editar antes de procesar</button>
+                <button id="toggleEditModeBtn" style="background:#8b5cf6; color:white; border:none; padding:6px 12px; border-radius:6px; font-weight:600; font-size:11px; cursor:pointer;">✏️ Editar reclamo</button>
             </div>
         `;
     }
     document.getElementById('detailBody').innerHTML = html;
     document.getElementById('detailPanel').classList.add('visible');
-    // Setup para el botón de edición (solo si es admin y está pending)
-    if (state.isAdmin && claim.status === 'pending') {
+    // Setup para el botón de edición (admin, cualquier estado)
+    if (state.isAdmin) {
         const toggleEditBtn = document.getElementById('toggleEditModeBtn');
         const editForm = document.getElementById('detailEditForm');
         const bodyDiv = document.getElementById('detailBody');
-        
+
         document.getElementById('editClaimDescription').value = claim.description || '';
         document.getElementById('editClaimAddress').value = claim.address || '';
         document.getElementById('editClaimCategory').value = claim.category || 'otro';
-        
+
         toggleEditBtn.addEventListener('click', () => {
             const isHidden = editForm.style.display === 'none';
             editForm.style.display = isHidden ? 'block' : 'none';
             bodyDiv.style.display = isHidden ? 'none' : 'block';
-            toggleEditBtn.textContent = isHidden ? '✕ Cerrar edición' : '✏️ Editar antes de procesar';
+            toggleEditBtn.textContent = isHidden ? '✕ Cerrar edición' : '✏️ Editar reclamo';
         });
-        
+
         document.getElementById('saveEditBtn').addEventListener('click', async () => {
             const newDesc = document.getElementById('editClaimDescription').value.trim();
             const newAddr = document.getElementById('editClaimAddress').value.trim();
             const newCat = document.getElementById('editClaimCategory').value;
-            
+
             const btn = document.getElementById('saveEditBtn');
             btn.disabled = true;
             btn.textContent = 'Guardando...';
-            
+
             try {
                 const { doc, updateDoc } = window.dbMethods;
                 await updateDoc(doc(window.db, "reclamos", fbId), {
@@ -1159,15 +1386,32 @@ if (isOldFormat) {
                     address: newAddr,
                     category: newCat
                 });
-                
+
+                // Si ya está publicado (approved/solved), la edición también tiene
+                // que reflejarse en la copia pública — si no, el vecino ve datos viejos.
+                if (claim.status === 'approved' || claim.status === 'solved') {
+                    try {
+                        await updateDoc(doc(window.db, "reclamos_publicos", fbId), {
+                            description: newDesc,
+                            address: newAddr,
+                            category: newCat
+                        });
+                    } catch (publicError) {
+                        console.error('Error actualizando la copia pública:', publicError);
+                    }
+                }
+
                 claim.description = newDesc;
                 claim.address = newAddr;
                 claim.category = newCat;
-                
+
                 editForm.style.display = 'none';
                 bodyDiv.style.display = 'block';
-                toggleEditBtn.textContent = '✏️ Editar antes de procesar';
-                
+                toggleEditBtn.textContent = '✏️ Editar reclamo';
+
+                await loadPublicClaims();
+                renderPublicClaimsList();
+                renderMapPins();
                 globalOpenDetailWindow(fbId);
                 alert('✅ Reclamo actualizado');
             } catch (error) {
@@ -1178,23 +1422,34 @@ if (isOldFormat) {
                 btn.textContent = 'Guardar';
             }
         });
-        
+
         document.getElementById('cancelEditBtn').addEventListener('click', () => {
             editForm.style.display = 'none';
             bodyDiv.style.display = 'block';
-            toggleEditBtn.textContent = '✏️ Editar antes de procesar';
+            toggleEditBtn.textContent = '✏️ Editar reclamo';
         });
     }
-       // 🆕 Si la foto no estaba en cache, la pedimos ahora — solo la de ESTE reclamo.
+       // Si la foto ya fue cargada por el popup (o por una apertura previa del detalle),
+       // `cacheHasEntry` ya es true y esto ni se ejecuta — no hay una segunda descarga.
+       // Si todavía está en vuelo (click muy rápido en "Ver detalles"), fetchClaimPhoto
+       // reutiliza la misma promesa que disparó el popup en vez de pedirla de nuevo.
        if (!isOldFormat && claim.hasPhoto && !cacheHasEntry) {
      const collectionName = state.isAdmin ? 'reclamos' : 'reclamos_publicos';
-       fetchClaimPhoto(fbId, collectionName).then((photo) => {
+       fetchClaimPhoto(fbId, collectionName).then(({ photo, error }) => {
         const container = document.getElementById('detailPhotoContainer');
         // Si el usuario ya cerró el detalle o abrió otro reclamo, no tocamos nada
         if (!container || container.dataset.fbid !== fbId) return;
 
         if (photo) {
-            container.outerHTML = `<div class="detail-card"><img src="${photo}" class="detail-img"></div>`;
+            container.outerHTML = `<div class="detail-card"><img src="${photo}" class="detail-img" alt="Foto del reclamo"></div>`;
+        } else if (error) {
+            container.outerHTML = `
+                <div class="detail-card detail-photo-error" id="detailPhotoContainer" data-fbid="${fbId}">
+                    <div style="padding:20px; text-align:center; color:#991b1b; font-size:12px; font-weight:600;">
+                        ⚠️ No se pudo cargar la imagen.
+                        <button type="button" class="popup-photo-retry" onclick="retryDetailPhoto('${fbId}', '${collectionName}')">Reintentar</button>
+                    </div>
+                </div>`;
         } else {
             container.remove();
         }
@@ -1504,24 +1759,24 @@ function initPoliticalCounter() {
 
     run(); // ← Ejecutar una vez al cargar
     setInterval(run, 60000); // ← Actualizar cada minuto
-
-    const block = document.querySelector('.political-counter');
-    if (block) {
-        block.style.cursor = 'pointer';
-        block.addEventListener('dblclick', () => {
-            document.getElementById('adminLoginModal').classList.remove('hidden');
-        });
-    }
 }
 
 // ---------------------------------------------------------------------------
 // CARGA DE DATOS
 // ---------------------------------------------------------------------------
 
+// Tope defensivo mientras no hay paginación real en la UI: evita traer la colección
+// completa sin límite a medida que crece el volumen de reclamos. No afecta el
+// comportamiento actual (muy por debajo de este número); es un techo de seguridad,
+// no una funcionalidad de paginación (eso queda pendiente, ver resumen de cambios).
+const CLAIMS_QUERY_LIMIT = 500;
+
 async function loadPublicClaims() {
+    const errorBanner = document.getElementById('dataLoadError');
     try {
-        const { collection, getDocs } = window.dbMethods;
-        const querySnapshot = await getDocs(collection(window.db, "reclamos_publicos"));
+        const { collection, getDocs, query, limit } = window.dbMethods;
+        const q = query(collection(window.db, "reclamos_publicos"), limit(CLAIMS_QUERY_LIMIT));
+        const querySnapshot = await getDocs(q);
 
         const cargados = [];
         querySnapshot.forEach((doc) => {
@@ -1534,17 +1789,20 @@ async function loadPublicClaims() {
         });
 
         state.claims = cargados;
+        if (errorBanner) errorBanner.classList.add('hidden');
         console.log("✅ Reclamos públicos cargados:", state.claims.length);
     } catch (error) {
         console.error("❌ Error cargando reclamos públicos:", error);
         state.claims = [];
+        if (errorBanner) errorBanner.classList.remove('hidden');
     }
 }
 
 async function loadAdminClaims() {
     try {
-        const { collection, getDocs } = window.dbMethods;
-        const querySnapshot = await getDocs(collection(window.db, "reclamos"));
+        const { collection, getDocs, query, limit } = window.dbMethods;
+        const q = query(collection(window.db, "reclamos"), limit(CLAIMS_QUERY_LIMIT));
+        const querySnapshot = await getDocs(q);
 
         const cargados = [];
         querySnapshot.forEach((doc) => {

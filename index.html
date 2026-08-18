@@ -43,15 +43,22 @@
             <div class="map-section">
                 <div id="map"></div>
 
-               <div class="category-filter-bar" id="categoryFilterBar">
-                    <button class="filter-btn active" data-cat="all" title="Ver todos"><svg class="filter-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4.5C7.305 4.5 3.6 7.305 3.6 10.8c0 3.495 3.705 6.3 8.4 6.3s8.4-2.805 8.4-6.3c0-3.495-3.705-6.3-8.4-6.3zm0 11.4c-2.79 0-5.04-1.845-5.04-4.2s2.25-4.2 5.04-4.2 5.04 1.845 5.04 4.2-2.25 4.2-5.04 4.2z"/><circle cx="12" cy="10.8" r="1.5"/></svg></button>
-                    <button class="filter-btn" data-cat="plazas" title="Parques / Paseos / Plazas"><img class="filter-icon" src="arboles.svg" alt="Parques"></button>
-                    <button class="filter-btn" data-cat="salud" title="Salud"><img class="filter-icon" src="salud.svg" alt="Salud"></button>
-                    <button class="filter-btn" data-cat="alumbrado" title="Alumbrado"><img class="filter-icon" src="Alumbrado.svg" alt="Alumbrado"></button>
-                    <button class="filter-btn" data-cat="calle" title="Bache / Calle / Camino"><img class="filter-icon" src="bache.svg" alt="Bache/Calle"></button>
-                    <button class="filter-btn" data-cat="basura" title="Basura"><img class="filter-icon" src="Basura.svg" alt="Basura"></button>
-                    <button class="filter-btn" data-cat="otro" title="Otros"><img class="filter-icon" src="otros.svg" alt="Otros"></button>
+                <div id="dataLoadError" class="data-load-error hidden" role="alert">
+                    <span>⚠️ No pudimos cargar los reclamos.</span>
+                    <button id="retryLoadBtn" type="button">Reintentar</button>
                 </div>
+
+               <div class="category-filter-bar" id="categoryFilterBar">
+                    <button class="filter-btn active" data-cat="all" title="Ver todos" aria-label="Ver todos"><svg class="filter-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4.5C7.305 4.5 3.6 7.305 3.6 10.8c0 3.495 3.705 6.3 8.4 6.3s8.4-2.805 8.4-6.3c0-3.495-3.705-6.3-8.4-6.3zm0 11.4c-2.79 0-5.04-1.845-5.04-4.2s2.25-4.2 5.04-4.2 5.04 1.845 5.04 4.2-2.25 4.2-5.04 4.2z"/><circle cx="12" cy="10.8" r="1.5"/></svg></button>
+                    <button class="filter-btn" data-cat="plazas" title="Parques / Paseos / Plazas" aria-label="Parques / Paseos / Plazas"><img class="filter-icon" src="arboles.svg" alt="Parques"></button>
+                    <button class="filter-btn" data-cat="salud" title="Salud" aria-label="Salud"><img class="filter-icon" src="salud.svg" alt="Salud"></button>
+                    <button class="filter-btn" data-cat="alumbrado" title="Alumbrado" aria-label="Alumbrado"><img class="filter-icon" src="Alumbrado.svg" alt="Alumbrado"></button>
+                    <button class="filter-btn" data-cat="calle" title="Bache / Calle / Camino" aria-label="Bache / Calle / Camino"><img class="filter-icon" src="bache.svg" alt="Bache/Calle"></button>
+                    <button class="filter-btn" data-cat="basura" title="Basura" aria-label="Basura"><img class="filter-icon" src="Basura.svg" alt="Basura"></button>
+                    <button class="filter-btn" data-cat="otro" title="Otros" aria-label="Otros"><img class="filter-icon" src="otros.svg" alt="Otros"></button>
+                </div>
+
+                <button id="newClaimFab" class="fab-new-claim" aria-label="Nuevo reclamo" type="button">+</button>
 
                 <div class="recent-claims-trigger" id="recentClaimsTrigger">
                     💬 <span class="trigger-text">Recientes</span> (<span id="claimCounter">0</span>)
@@ -60,7 +67,7 @@
                 <div class="recent-claims-popup hidden" id="recentClaimsPopup">
                     <div class="recent-popup-header">
                         <h4>📌 RECLAMOS RECIENTES</h4>
-                        <button id="closeRecentPopup" class="close-popup-btn">×</button>
+                        <button id="closeRecentPopup" class="close-popup-btn" aria-label="Cerrar">×</button>
                     </div>
                     <div class="recent-popup-body" id="claimsList"></div>
                 </div>
@@ -69,7 +76,7 @@
 
 <div id="mapClickBanner" class="map-click-banner hidden">
     <span>👆 Haz click en el mapa para señalar la ubicación</span>
-    <button id="cancelMapClickBanner" style="background:none; border:none; color:#fff; font-size:18px; cursor:pointer;">×</button>
+    <button id="cancelMapClickBanner" aria-label="Cancelar" style="background:none; border:none; color:#fff; font-size:18px; cursor:pointer;">×</button>
 </div>
             </div>
         </div>
@@ -91,6 +98,7 @@
                 <div class="footer-col copy-col">
                     <p>&copy; 2026 Ciudadanos de Olavarría.</p>
                     <p class="footer-legal-tag">Desarrollado en base a métricas de transparencia y control público municipal.</p>
+                    <button id="adminEntryLink" class="admin-entry-link" type="button">Acceso interno</button>
                 </div>
             </div>
         </footer>
@@ -100,7 +108,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h2>Reportar Incidente</h2>
-                <button id="closeModal" class="btn-close">×</button>
+                <button id="closeModal" class="btn-close" aria-label="Cerrar">×</button>
             </div>
            <div class="modal-body">
                 <div id="claimFormBody">
@@ -173,6 +181,7 @@
                         <p style="font-size:12px; color:#64748b; margin-bottom:10px;">Dejanos tus datos para mantenerte informado sobre novedades de tu reclamo</p>
                         <input type="text" id="claimName" placeholder="Tu nombre" class="input-field">
 <input type="tel" id="claimPhone" placeholder="Teléfono (Ej: 2284123456)" class="input-field">
+                        <p class="privacy-note">🔒 Estos datos son privados: solo los ve el equipo de moderación para contactarte por este reclamo. No se publican en el mapa.</p>
                     </div>
 
                     <div id="formMessage" class="form-message" style="background: rgb(220, 252, 231); color: rgb(21, 128, 61); display: none;">✅ Reclamo enviado correctamente</div>
@@ -184,6 +193,11 @@
                     <p style="color:#475569; font-size:14px; line-height:1.6; max-width:320px; margin:0 auto;">
                         Tu reporte ya está guardado. Lo vas a ver marcado <strong>en gris en el mapa</strong> mientras esté pendiente de revisión, y va a pasar a color una vez que un administrador lo apruebe.
                     </p>
+                    <div id="successClaimIdBox" class="success-claim-id-box">
+                        <div class="success-claim-id-label">Tu código de referencia</div>
+                        <div id="successClaimId" class="success-claim-id"></div>
+                        <div class="success-claim-id-hint">Guardalo — te sirve para consultar tu reclamo si contactás al municipio o a la plataforma.</div>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
@@ -197,7 +211,7 @@
     <div id="detailPanel" class="detail-panel">
         <div class="detail-header">
             <h2 id="detailTitle">Detalle de Incidente</h2>
-            <button id="closeDetail" class="btn-close">×</button>
+            <button id="closeDetail" class="btn-close" aria-label="Cerrar">×</button>
         </div>
         <div class="detail-body" id="detailBody"></div>
      <div id="detailEditForm" style="display:none; padding:20px; background:#f8fafc; border-top:1px solid #e2e8f0; flex-shrink:0; overflow-y:auto; max-height:50vh;">
@@ -233,7 +247,7 @@
         <div class="modal-content modal-adhesion">
             <div class="modal-header">
                 <h2>Adherir a este reclamo</h2>
-                <button id="closeAdhesionModal" class="btn-close">×</button>
+                <button id="closeAdhesionModal" class="btn-close" aria-label="Cerrar">×</button>
             </div>
             <div class="modal-body">
                 <p style="margin-bottom: 14px; color: #64748b;">Tu nombre nos ayuda a validar la cantidad de vecinos preocupados por este problema.</p>
@@ -250,7 +264,7 @@
         <div class="modal-content" style="max-width:340px;">
             <div class="modal-header">
                 <h2>Acceso administrador</h2>
-                <button id="closeAdminLogin" class="btn-close">×</button>
+                <button id="closeAdminLogin" class="btn-close" aria-label="Cerrar">×</button>
             </div>
             <div class="modal-body">
                 <input type="email" id="adminEmail" placeholder="Email" class="input-field" autocomplete="username">
@@ -309,7 +323,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
         import {
-    getFirestore, collection, addDoc, getDocs, getDoc, query, where,
+    getFirestore, collection, addDoc, getDocs, getDoc, query, where, limit,
     updateDoc, deleteDoc, doc, setDoc
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
         import {
@@ -330,7 +344,8 @@
         const auth = getAuth(app);
 
         window.db = db;
-        window.dbMethods = { collection, addDoc, getDocs, getDoc, query, where, updateDoc, deleteDoc, doc, setDoc };        window.auth = auth;
+        window.dbMethods = { collection, addDoc, getDocs, getDoc, query, where, limit, updateDoc, deleteDoc, doc, setDoc };
+        window.auth = auth;
         window.authMethods = { signInWithEmailAndPassword, signOut, onAuthStateChanged };
     </script>
 

@@ -163,8 +163,8 @@ html, body {
 }
 
 .filter-btn {
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
     border-radius: 50%;
     border: none;
     background: #ffffff;
@@ -380,6 +380,11 @@ html, body {
     color: #94a3b8;
     font-size: 24px;
     cursor: pointer;
+    min-width: 44px;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .btn-close:hover { color: white; }
@@ -677,8 +682,8 @@ html, body {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 36px;
-    height: 36px;
+    width: 44px;
+    height: 44px;
     border-radius: 6px;
     border: none;
     cursor: pointer;
@@ -977,7 +982,9 @@ html, body {
 
     .header-subtitle { font-size: 11px; }
 
-    .btn-new-claim { padding: 7px 12px; font-size: 11px; align-self: flex-end; margin-top: -36px; }
+    /* En mobile el CTA principal pasa a ser el FAB flotante (zona del pulgar),
+       así evitamos el hack de posicionamiento y liberamos espacio en el header. */
+    .btn-new-claim { display: none; }
 
     .footer-grid { grid-template-columns: 1fr; gap: 14px; text-align: center; }
 
@@ -993,7 +1000,7 @@ html, body {
 
     .category-filter-bar { top: 10px; left: 10px; flex-direction: row; padding: 4px; border-radius: 20px; max-width: calc(100% - 20px); overflow-x: auto; }
 
-    .filter-btn { width: 34px; height: 34px; font-size: 15px; flex-shrink: 0; }
+    .filter-btn { width: 44px; height: 44px; font-size: 16px; flex-shrink: 0; }
 
     .recent-claims-trigger { bottom: 15px; right: 10px; padding: 10px 14px; font-size: 11px; }
 
@@ -1085,3 +1092,156 @@ html, body {
 body.mp-loading {
     overflow: hidden;
 }
+
+/* ==================== FAB "NUEVO RECLAMO" (mobile) ==================== */
+.fab-new-claim {
+    display: none;
+}
+
+@media (max-width: 768px) {
+    .fab-new-claim {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: fixed;
+        bottom: 80px;
+        right: 16px;
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        background: var(--primary);
+        color: var(--dark);
+        font-size: 30px;
+        font-weight: 800;
+        border: none;
+        box-shadow: var(--shadow-md);
+        z-index: 1100;
+        cursor: pointer;
+        line-height: 1;
+    }
+    .fab-new-claim:active { transform: scale(0.95); }
+}
+
+/* ==================== BANNER DE ERROR DE CARGA ==================== */
+.data-load-error {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1300;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #991b1b;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-shadow: var(--shadow-md);
+    max-width: calc(100% - 32px);
+}
+
+.data-load-error.hidden { display: none; }
+
+.data-load-error button {
+    background: #991b1b;
+    color: #fff;
+    border: none;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-weight: 700;
+    font-size: 11px;
+    cursor: pointer;
+    min-height: 32px;
+}
+
+/* ==================== FOTO LAZY EN POPUP/DETALLE ==================== */
+.popup-img-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.popup-img-spinner {
+    font-size: 20px;
+    animation: loader-pulse 1.2s ease-in-out infinite;
+}
+
+.popup-photo-retry {
+    width: 100%;
+    background: #fef2f2;
+    color: #991b1b;
+    border: 1px dashed #fca5a5;
+    border-radius: 6px;
+    padding: 8px;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    min-height: 44px;
+}
+
+/* ==================== PRIVACIDAD / CÓDIGO DE SEGUIMIENTO ==================== */
+.privacy-note {
+    font-size: 11px;
+    color: #64748b;
+    background: #f0f4f8;
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-top: 4px;
+    line-height: 1.4;
+}
+
+.success-claim-id-box {
+    margin: 18px auto 0;
+    max-width: 280px;
+    background: #f0fdf4;
+    border: 1px dashed #86efac;
+    border-radius: 10px;
+    padding: 12px;
+}
+
+.success-claim-id-label {
+    font-size: 10px;
+    font-weight: 700;
+    color: #15803d;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+.success-claim-id {
+    font-size: 18px;
+    font-weight: 800;
+    color: #14532d;
+    letter-spacing: 0.5px;
+    margin: 4px 0;
+}
+
+.success-claim-id-hint {
+    font-size: 11px;
+    color: #475569;
+    line-height: 1.4;
+}
+
+/* ==================== ACCESO ADMIN (footer, discreto) ==================== */
+.admin-entry-link {
+    background: none;
+    border: none;
+    color: #94a3b8;
+    font-size: 10px;
+    text-decoration: underline;
+    cursor: pointer;
+    padding: 6px 2px;
+    min-height: 32px;
+}
+
+.admin-entry-link:hover { color: #cbd5e1; }
+
+/* ==================== ADHESIÓN YA REALIZADA ==================== */
+.btn-adhesion:disabled {
+    background: #cbd5e1;
+    color: #475569;
+    cursor: default;
+}
+.btn-adhesion:disabled:hover { background: #cbd5e1; }
