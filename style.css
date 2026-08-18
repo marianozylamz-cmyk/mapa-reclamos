@@ -28,7 +28,14 @@ html, body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     background: var(--gray-bg);
     color: var(--text-main);
-    overflow: hidden;
+    /* Nunca scroll horizontal de la página completa (ver .category-filter-bar para
+       el único componente con su propio scroll horizontal intencional). overflow-y
+       queda en auto (no hidden) para que la barra admin no tape el final del sitio. */
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-x: none;
+    overscroll-behavior-y: contain;
+    touch-action: manipulation;
 }
 
 /* ==================== BARRA DE SESIÓN ADMIN ==================== */
@@ -253,6 +260,7 @@ html, body {
 .recent-popup-body {
     flex: 1;
     overflow-y: auto;
+    overscroll-behavior: contain;
     padding: 12px;
 }
 
@@ -392,6 +400,8 @@ html, body {
 .modal-body {
     flex: 1;
     overflow-y: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
     padding: 20px;
     display: flex;
     flex-direction: column;
@@ -564,6 +574,8 @@ html, body {
 .detail-body {
     padding: 20px;
     overflow-y: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
     flex: 1;
     display: flex;
     flex-direction: column;
@@ -780,6 +792,7 @@ html, body {
     gap: 20px;
     flex-shrink: 0;
     overflow-y: auto;
+    overscroll-behavior: contain;
 }
 
 .admin-stats {
@@ -828,6 +841,7 @@ html, body {
     flex: 1;
     padding: 20px;
     overflow-y: auto;
+    overscroll-behavior: contain;
     display: flex;
     flex-direction: column;
     min-height: 0;
@@ -982,9 +996,7 @@ html, body {
 
     .header-subtitle { font-size: 11px; }
 
-    /* En mobile el CTA principal pasa a ser el FAB flotante (zona del pulgar),
-       así evitamos el hack de posicionamiento y liberamos espacio en el header. */
-    .btn-new-claim { display: none; }
+    .btn-new-claim { padding: 8px 14px; font-size: 12px; min-height: 44px; }
 
     .footer-grid { grid-template-columns: 1fr; gap: 14px; text-align: center; }
 
@@ -992,13 +1004,12 @@ html, body {
 
     .site-footer { padding: 16px 20px; }
 
-    html, body { overflow: auto; }
 
     .main-page { height: auto; min-height: 100vh; }
 
     .main-content { height: 70vh; flex: none; }
 
-    .category-filter-bar { top: 10px; left: 10px; flex-direction: row; padding: 4px; border-radius: 20px; max-width: calc(100% - 20px); overflow-x: auto; }
+    .category-filter-bar { top: 10px; left: 10px; flex-direction: row; padding: 4px; border-radius: 20px; max-width: calc(100% - 20px); overflow-x: auto; overscroll-behavior-x: contain; touch-action: pan-x; }
 
     .filter-btn { width: 44px; height: 44px; font-size: 16px; flex-shrink: 0; }
 
@@ -1192,51 +1203,6 @@ body.mp-loading {
     margin-top: 4px;
     line-height: 1.4;
 }
-
-.success-claim-id-box {
-    margin: 18px auto 0;
-    max-width: 280px;
-    background: #f0fdf4;
-    border: 1px dashed #86efac;
-    border-radius: 10px;
-    padding: 12px;
-}
-
-.success-claim-id-label {
-    font-size: 10px;
-    font-weight: 700;
-    color: #15803d;
-    text-transform: uppercase;
-    letter-spacing: 0.4px;
-}
-
-.success-claim-id {
-    font-size: 18px;
-    font-weight: 800;
-    color: #14532d;
-    letter-spacing: 0.5px;
-    margin: 4px 0;
-}
-
-.success-claim-id-hint {
-    font-size: 11px;
-    color: #475569;
-    line-height: 1.4;
-}
-
-/* ==================== ACCESO ADMIN (footer, discreto) ==================== */
-.admin-entry-link {
-    background: none;
-    border: none;
-    color: #94a3b8;
-    font-size: 10px;
-    text-decoration: underline;
-    cursor: pointer;
-    padding: 6px 2px;
-    min-height: 32px;
-}
-
-.admin-entry-link:hover { color: #cbd5e1; }
 
 /* ==================== ADHESIÓN YA REALIZADA ==================== */
 .btn-adhesion:disabled {

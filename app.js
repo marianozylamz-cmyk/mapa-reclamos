@@ -290,7 +290,7 @@ function initLeafletMap() {
     // Los reclamos aprobados van agrupados (clustering) para que no se amontonen
     // en el mapa cuando hay muchos cerca. Ver leaflet.markercluster en index.html.
    state.clusterGroup = L.markerClusterGroup({
-    maxClusterRadius: 60,
+    maxClusterRadius: 22,
     spiderfyOnMaxZoom: true,
     showCoverageOnHover: false,
     iconCreateFunction: function(cluster) {
@@ -400,15 +400,6 @@ function openNewClaimFlow() {
 
 function setupApplicationEvents() {
     document.getElementById('newClaimBtn').addEventListener('click', openNewClaimFlow);
-    const fab = document.getElementById('newClaimFab');
-    if (fab) fab.addEventListener('click', openNewClaimFlow);
-
-    const adminEntryLink = document.getElementById('adminEntryLink');
-    if (adminEntryLink) {
-        adminEntryLink.addEventListener('click', () => {
-            document.getElementById('adminLoginModal').classList.remove('hidden');
-        });
-    }
 
     document.getElementById('retryLoadBtn')?.addEventListener('click', async () => {
         await loadPublicClaims();
@@ -635,11 +626,29 @@ function triggerGPSCapture() {
             document.getElementById('useGPS').textContent = '📍 Capturar por GPS';
         },
         (err) => {
-            flashErrorMessage(`GPS error: ${err.message}`);
+            flashErrorMessage(getGPSErrorMessage(err));
             document.getElementById('useGPS').disabled = false;
             document.getElementById('useGPS').textContent = '📍 Capturar por GPS';
-        }
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
+}
+
+function getGPSErrorMessage(err) {
+    // err.code === 1 (PERMISSION_DENIED) casi siempre significa que el permiso de
+    // ubicación quedó bloqueado para este sitio de una vez anterior — el navegador
+    // ni vuelve a mostrar el cartel de "Permitir ubicación", así que el mensaje
+    // tiene que decirle al usuario dónde desbloquearlo a mano.
+    if (err.code === 1) {
+        return '⚠️ El navegador tiene bloqueado el permiso de ubicación para este sitio. Revisá la configuración de ubicación de tu navegador (ícono de candado/ajustes del sitio) y habilitala, o usá "Señalar en mapa".';
+    }
+    if (err.code === 2) {
+        return '⚠️ No se pudo determinar tu ubicación (GPS/ubicación del dispositivo apagado). Activalo o usá "Señalar en mapa".';
+    }
+    if (err.code === 3) {
+        return '⚠️ Se agotó el tiempo esperando el GPS. Probá de nuevo o usá "Señalar en mapa".';
+    }
+    return `GPS error: ${err.message}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -906,7 +915,6 @@ async function executeSubmitForm() {
 
         renderMapPins();
 
-        document.getElementById('successClaimId').textContent = claimId;
         document.getElementById('claimFormBody').style.display = 'none';
         document.getElementById('formSuccessView').style.display = 'block';
         document.getElementById('submitBtn').style.display = 'none';
@@ -1759,6 +1767,14 @@ function initPoliticalCounter() {
 
     run(); // ← Ejecutar una vez al cargar
     setInterval(run, 60000); // ← Actualizar cada minuto
+
+    const block = document.querySelector('.political-counter');
+    if (block) {
+        block.style.cursor = 'pointer';
+        block.addEventListener('dblclick', () => {
+            document.getElementById('adminLoginModal').classList.remove('hidden');
+        });
+    }
 }
 
 // ---------------------------------------------------------------------------
