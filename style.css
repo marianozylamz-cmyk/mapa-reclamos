@@ -486,6 +486,15 @@ html, body {
 
 .btn-location:hover { background: var(--dark-light); }
 
+.btn-attention-pulse {
+    animation: btnAttentionPulse 0.6s ease-in-out 2;
+}
+
+@keyframes btnAttentionPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.6); }
+    50% { box-shadow: 0 0 0 6px rgba(139, 92, 246, 0); }
+}
+
 .photo-zone {
     border: 2px dashed #cbd5e1;
     border-radius: 8px;

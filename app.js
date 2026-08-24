@@ -205,6 +205,12 @@ function escapeHtml(str) {
 // ---------------------------------------------------------------------------
 
 const MY_CLAIMS_STORAGE_KEY = 'mp_my_pending_claims';
+// Cuánto mostramos el pin gris de "tu reclamo, pendiente de revisión" en este
+// navegador. Pasado este plazo lo descartamos aunque el admin nunca lo haya
+// tocado — un rechazo/borrado no le llega al vecino de otra forma, así que sin
+// esto el pin le queda pegado para siempre. 72hs es tiempo de sobra para ver
+// el propio reclamo ya confirmado.
+const MY_CLAIMS_MAX_AGE_MS = 72 * 60 * 60 * 1000;
 
 function saveClaimToLocalTracking(claimData) {
     try {
@@ -225,10 +231,19 @@ function loadLocalTrackedClaims() {
 }
 
 // Si un reclamo trackeado localmente ya aparece como público (fue aprobado o
-// solucionado), dejamos de mostrarlo como "pendiente" — ya se ve normal en el mapa.
+// solucionado), o ya pasaron MY_CLAIMS_MAX_AGE_MS desde que se creó, dejamos de
+// mostrarlo como "pendiente" — en el primer caso ya se ve normal en el mapa; en
+// el segundo, cubre el caso de rechazo/borrado (que el vecino no puede ver de
+// otra forma) para que el pin gris no le quede pegado para siempre.
 function pruneResolvedLocalTrackedClaims() {
     const publicClaimIds = new Set(state.claims.map(c => c.claimId));
-    const remaining = loadLocalTrackedClaims().filter(c => !publicClaimIds.has(c.claimId));
+    const now = Date.now();
+    const remaining = loadLocalTrackedClaims().filter(c => {
+        if (publicClaimIds.has(c.claimId)) return false;
+        const createdAtMs = c.createdAt ? new Date(c.createdAt).getTime() : NaN;
+        if (!Number.isFinite(createdAtMs)) return false; // sin timestamp: no sabemos la edad, lo descartamos
+        return (now - createdAtMs) < MY_CLAIMS_MAX_AGE_MS;
+    });
     try {
         localStorage.setItem(MY_CLAIMS_STORAGE_KEY, JSON.stringify(remaining));
     } catch (e) { /* ignorar */ }
@@ -627,6 +642,7 @@ function triggerGPSCapture() {
         },
         (err) => {
             flashErrorMessage(getGPSErrorMessage(err));
+            if (err.code === 1) highlightMapClickAlternative();
             document.getElementById('useGPS').disabled = false;
             document.getElementById('useGPS').textContent = '📍 Capturar por GPS';
         },
@@ -635,20 +651,50 @@ function triggerGPSCapture() {
 }
 
 function getGPSErrorMessage(err) {
-    // err.code === 1 (PERMISSION_DENIED) casi siempre significa que el permiso de
-    // ubicación quedó bloqueado para este sitio de una vez anterior — el navegador
-    // ni vuelve a mostrar el cartel de "Permitir ubicación", así que el mensaje
-    // tiene que decirle al usuario dónde desbloquearlo a mano.
+    // err.code === 1 (PERMISSION_DENIED): el navegador no tiene ninguna API para
+    // volver a mostrar el diálogo nativo de permiso una vez que el usuario lo negó
+    // (restricción de seguridad del browser/SO) — lo único que podemos hacer es
+    // indicarle dónde reactivarlo a mano.
     if (err.code === 1) {
-        return '⚠️ El navegador tiene bloqueado el permiso de ubicación para este sitio. Revisá la configuración de ubicación de tu navegador (ícono de candado/ajustes del sitio) y habilitala, o usá "Señalar en mapa".';
+        return getLocationPermissionDeniedMessage();
     }
     if (err.code === 2) {
-        return '⚠️ No se pudo determinar tu ubicación (GPS/ubicación del dispositivo apagado). Activalo o usá "Señalar en mapa".';
+        return '⚠️ No se pudo determinar tu ubicación (GPS/ubicación del dispositivo apagado). Activalo o usá "📍 Señalar en mapa".';
     }
     if (err.code === 3) {
-        return '⚠️ Se agotó el tiempo esperando el GPS. Probá de nuevo o usá "Señalar en mapa".';
+        return '⚠️ Se agotó el tiempo esperando el GPS. Probá de nuevo o usá "📍 Señalar en mapa".';
     }
     return `GPS error: ${err.message}`;
+}
+
+// Instrucciones aproximadas por navegador/SO para reactivar el permiso de
+// ubicación a mano. La detección por user agent no es perfecta, pero alcanza
+// para diferenciar los dos casos más comunes; para cualquier otro caso damos
+// una instrucción genérica.
+function getLocationPermissionDeniedMessage() {
+    const ua = navigator.userAgent || '';
+    const isIOS = /iPhone|iPad|iPod/.test(ua);
+    const isSafariIOS = isIOS && /Safari/.test(ua) && !/CriOS|FxiOS/.test(ua);
+    const isAndroidChrome = /Android/.test(ua) && /Chrome/.test(ua);
+
+    let howTo = 'Revisá los permisos de ubicación de este sitio en la configuración de tu navegador y habilitalos.';
+    if (isSafariIOS) {
+        howTo = 'Activalo en Ajustes del iPhone → Safari → Ubicación → "Preguntar" (si entraste desde un ícono agregado a la pantalla de inicio: Ajustes → Privacidad y seguridad → Localización → Safari).';
+    } else if (isAndroidChrome) {
+        howTo = 'Tocá el ícono de candado/info junto a la dirección del sitio → Permisos → Ubicación → Permitir.';
+    }
+
+    return `⚠️ El navegador tiene bloqueado el permiso de ubicación para este sitio. ${howTo} Mientras tanto, usá el botón "📍 Señalar en mapa" de al lado para marcar la ubicación a mano.`;
+}
+
+// Llama la atención sobre el botón "Señalar en mapa" cuando el GPS quedó
+// bloqueado, para que la alternativa sea obvia y la persona no se quede
+// trabada esperando un permiso que ya sabemos que no va a volver a aparecer.
+function highlightMapClickAlternative() {
+    const btn = document.getElementById('useMapClick');
+    if (!btn) return;
+    btn.classList.add('btn-attention-pulse');
+    setTimeout(() => btn.classList.remove('btn-attention-pulse'), 2500);
 }
 
 // ---------------------------------------------------------------------------
