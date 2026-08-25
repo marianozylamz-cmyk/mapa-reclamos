@@ -349,5 +349,13 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
     <script src="app.js"></script>
+
+    <!-- Vercel Web Analytics — sitio estático sin build step, se usa el script
+         directo en vez del paquete @vercel/analytics/next (ese es para Next.js).
+         Requiere habilitar "Analytics" en el dashboard de Vercel para este proyecto. -->
+    <script>
+        window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+    </script>
+    <script defer src="/_vercel/insights/script.js"></script>
 </body>
 </html>
