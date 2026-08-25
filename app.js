@@ -83,7 +83,9 @@ const state = {
     currentLocation: null,
     currentPhoto: null,
     activeCategoryFilter: 'all',
-    mapClickLocation: null
+    mapClickLocation: null,
+    adminMoveLocation: null, // lat/lng nueva elegida por el admin al reubicar un reclamo (sin guardar aún)
+    suspendMapClickToCreate: false // true mientras el admin está reubicando (ver startAdminLocationPick)
 };
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -332,6 +334,11 @@ function initLeafletMap() {
     state.map.addLayer(state.clusterGroup);
 
     state.map.on('click', (e) => {
+        // Suspendido mientras el admin está reubicando un reclamo existente
+        // (ver startAdminLocationPick) — si no, este mismo click abriría además
+        // el flujo de "crear reclamo nuevo acá".
+        if (state.suspendMapClickToCreate) return;
+
         const lat = e.latlng.lat;
         const lng = e.latlng.lng;
 
@@ -345,6 +352,52 @@ function initLeafletMap() {
     });
 
     renderMapPins();
+}
+
+// Deja que el admin corrija la ubicación de un reclamo existente tocando el
+// mapa (para cuando el vecino le erró al pin pero puso bien la dirección en
+// la descripción). Reutiliza el overlay/banner de "señalar en mapa" ya
+// existente; solo guarda la nueva ubicación en state.adminMoveLocation, no
+// escribe nada en Firestore todavía — eso lo hace saveEditBtn al guardar.
+function startAdminLocationPick(onPicked) {
+    const overlay = document.getElementById('mapClickOverlay');
+    const banner = document.getElementById('mapClickBanner');
+    const bannerText = banner.querySelector('span');
+    const originalBannerText = bannerText.textContent;
+    const detailPanel = document.getElementById('detailPanel');
+
+    detailPanel.classList.remove('visible');
+    bannerText.textContent = '👆 Tocá el mapa donde va realmente este reclamo';
+    overlay.classList.remove('hidden');
+    banner.classList.remove('hidden');
+    state.suspendMapClickToCreate = true;
+
+    const cleanup = () => {
+        overlay.classList.add('hidden');
+        banner.classList.add('hidden');
+        bannerText.textContent = originalBannerText;
+        state.suspendMapClickToCreate = false;
+        detailPanel.classList.add('visible');
+    };
+
+    document.getElementById('cancelMapClickBanner').onclick = () => {
+        cleanup();
+    };
+
+    state.map.once('click', (e) => {
+        const lat = e.latlng.lat;
+        const lng = e.latlng.lng;
+
+        if (!isWithinOlavarria(lat, lng)) {
+            alert('⚠️ Solo puedes ubicar reclamos dentro del partido de Olavarría');
+            cleanup();
+            return;
+        }
+
+        state.adminMoveLocation = { lat, lng };
+        cleanup();
+        onPicked();
+    });
 }
 
 function showMapClickModal(lat, lng) {
@@ -1264,6 +1317,17 @@ if (isOldFormat) {
         `;
     }
 
+    // Datos de contacto del vecino — solo admin, solo existen en la colección
+    // privada "reclamos" (nunca llegan a reclamos_publicos).
+    if (state.isAdmin && (claim.name || claim.phone)) {
+        html += `
+            <div class="detail-card">
+                <div class="detail-label">Datos de contacto</div>
+                <div class="detail-value">${escapeHtml(claim.name || '—')}${claim.phone ? ' · ' + escapeHtml(claim.phone) : ' · sin teléfono'}</div>
+            </div>
+        `;
+    }
+
     html += `
         <div class="detail-card">
             <div class="detail-label">Título</div>
@@ -1352,12 +1416,17 @@ if (isOldFormat) {
     }
 
     if (state.isAdmin) {
-        html += `
-            <div class="detail-actions">
-                <button class="btn-action btn-approve" onclick="dispatchStatus('${claim._fbId}', 'approved')">✅ Aprobar</button>
-                <button class="btn-action btn-reject" onclick="dispatchStatus('${claim._fbId}', 'rejected')">❌ Rechazar</button>
-            </div>
-        `;
+        // No mostramos "Aprobar" si ya está aprobado/solucionado, ni "Rechazar"
+        // si ya está rechazado — antes aparecían siempre los dos, sin importar
+        // el estado actual del reclamo.
+        const showApprove = claim.status !== 'approved' && claim.status !== 'solved';
+        const showReject = claim.status !== 'rejected';
+        if (showApprove || showReject) {
+            html += `<div class="detail-actions">`;
+            if (showApprove) html += `<button class="btn-action btn-approve" onclick="dispatchStatus('${claim._fbId}', 'approved')">✅ Aprobar</button>`;
+            if (showReject) html += `<button class="btn-action btn-reject" onclick="dispatchStatus('${claim._fbId}', 'rejected')">❌ Rechazar</button>`;
+            html += `</div>`;
+        }
         if (claim.status === 'approved') {
             html += `
                 <div class="detail-actions">
@@ -1417,6 +1486,20 @@ if (isOldFormat) {
         document.getElementById('editClaimAddress').value = claim.address || '';
         document.getElementById('editClaimCategory').value = claim.category || 'otro';
 
+        state.adminMoveLocation = null; // reset: no arrastramos una ubicación elegida en otro reclamo
+        const editLocationDisplay = document.getElementById('editLocationDisplay');
+        const refreshEditLocationDisplay = () => {
+            const loc = state.adminMoveLocation || { lat: claim.lat, lng: claim.lng };
+            editLocationDisplay.textContent = state.adminMoveLocation
+                ? `📍 Nueva ubicación (sin guardar): ${loc.lat.toFixed(5)}, ${loc.lng.toFixed(5)}`
+                : `📍 Ubicación actual: ${loc.lat.toFixed(5)}, ${loc.lng.toFixed(5)}`;
+        };
+        refreshEditLocationDisplay();
+
+        document.getElementById('editMoveLocationBtn').addEventListener('click', () => {
+            startAdminLocationPick(refreshEditLocationDisplay);
+        });
+
         toggleEditBtn.addEventListener('click', () => {
             const isHidden = editForm.style.display === 'none';
             editForm.style.display = isHidden ? 'block' : 'none';
@@ -1428,6 +1511,7 @@ if (isOldFormat) {
             const newDesc = document.getElementById('editClaimDescription').value.trim();
             const newAddr = document.getElementById('editClaimAddress').value.trim();
             const newCat = document.getElementById('editClaimCategory').value;
+            const newLoc = state.adminMoveLocation; // null si no se tocó la ubicación
 
             const btn = document.getElementById('saveEditBtn');
             btn.disabled = true;
@@ -1435,21 +1519,19 @@ if (isOldFormat) {
 
             try {
                 const { doc, updateDoc } = window.dbMethods;
-                await updateDoc(doc(window.db, "reclamos", fbId), {
-                    description: newDesc,
-                    address: newAddr,
-                    category: newCat
-                });
+                const updatePayload = { description: newDesc, address: newAddr, category: newCat };
+                if (newLoc) {
+                    updatePayload.lat = newLoc.lat;
+                    updatePayload.lng = newLoc.lng;
+                }
+
+                await updateDoc(doc(window.db, "reclamos", fbId), updatePayload);
 
                 // Si ya está publicado (approved/solved), la edición también tiene
                 // que reflejarse en la copia pública — si no, el vecino ve datos viejos.
                 if (claim.status === 'approved' || claim.status === 'solved') {
                     try {
-                        await updateDoc(doc(window.db, "reclamos_publicos", fbId), {
-                            description: newDesc,
-                            address: newAddr,
-                            category: newCat
-                        });
+                        await updateDoc(doc(window.db, "reclamos_publicos", fbId), updatePayload);
                     } catch (publicError) {
                         console.error('Error actualizando la copia pública:', publicError);
                     }
@@ -1458,6 +1540,11 @@ if (isOldFormat) {
                 claim.description = newDesc;
                 claim.address = newAddr;
                 claim.category = newCat;
+                if (newLoc) {
+                    claim.lat = newLoc.lat;
+                    claim.lng = newLoc.lng;
+                }
+                state.adminMoveLocation = null;
 
                 editForm.style.display = 'none';
                 bodyDiv.style.display = 'block';
@@ -1478,6 +1565,7 @@ if (isOldFormat) {
         });
 
         document.getElementById('cancelEditBtn').addEventListener('click', () => {
+            state.adminMoveLocation = null;
             editForm.style.display = 'none';
             bodyDiv.style.display = 'block';
             toggleEditBtn.textContent = '✏️ Editar reclamo';
@@ -1779,7 +1867,7 @@ function renderAdminViewCards(section) {
                     <span class="admin-card-badge" style="background:#fef3c7; color:#92400e;">Prioridad: ${priorityLabel}</span>
                     <span class="admin-card-badge" style="background:#dbeafe; color:#1e40af;">${claim.adhesions || 0} adhesiones</span>
                 </div>
-                <div class="admin-card-meta">Creado: ${createdDate} | Autor: ${escapeHtml(claim.name)}</div>
+                <div class="admin-card-meta">Creado: ${createdDate} | Autor: ${escapeHtml(claim.name)}${claim.phone ? ' · Tel: ' + escapeHtml(claim.phone) : ''}</div>
                 <button class="btn-popup-more" onclick="globalOpenDetailWindow('${claim._fbId}')">Inspeccionar</button>
             </div>
         `;
