@@ -1372,15 +1372,6 @@ if (isOldFormat) {
         `;
     }
 
-    if (claim.description) {
-        html += `
-            <div class="detail-card">
-                <div class="detail-label">Descripción</div>
-                <div class="detail-value">${escapeHtml(claim.description)}</div>
-            </div>
-        `;
-    }
-
     if (claim.status === 'approved' || claim.status === 'solved') {
         const alreadyAdhered = hasAdheredTo(claim._fbId);
         html += `
