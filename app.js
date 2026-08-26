@@ -1496,9 +1496,17 @@ if (isOldFormat) {
         };
         refreshEditLocationDisplay();
 
-        document.getElementById('editMoveLocationBtn').addEventListener('click', () => {
+        // .onclick en vez de addEventListener: esto REEMPLAZA el handler anterior en
+        // vez de apilarlo. #editMoveLocationBtn/#saveEditBtn/#cancelEditBtn viven en
+        // #detailEditForm, un <div> estático que nunca se recrea entre reclamos — con
+        // addEventListener, abrir varios reclamos en la misma sesión de admin dejaba
+        // un listener por cada uno apilado, y "Guardar" los disparaba a todos juntos,
+        // pisando el description/address/category/lat/lng de reclamos ajenos con el
+        // contenido del formulario actual. Esto causó corrupción real de datos (ver
+        // diagnóstico del 26/8: reclamos con contenido mezclado entre sí).
+        document.getElementById('editMoveLocationBtn').onclick = () => {
             startAdminLocationPick(refreshEditLocationDisplay);
-        });
+        };
 
         toggleEditBtn.addEventListener('click', () => {
             const isHidden = editForm.style.display === 'none';
@@ -1507,7 +1515,7 @@ if (isOldFormat) {
             toggleEditBtn.textContent = isHidden ? '✕ Cerrar edición' : '✏️ Editar reclamo';
         });
 
-        document.getElementById('saveEditBtn').addEventListener('click', async () => {
+        document.getElementById('saveEditBtn').onclick = async () => {
             const newDesc = document.getElementById('editClaimDescription').value.trim();
             const newAddr = document.getElementById('editClaimAddress').value.trim();
             const newCat = document.getElementById('editClaimCategory').value;
@@ -1562,14 +1570,14 @@ if (isOldFormat) {
                 btn.disabled = false;
                 btn.textContent = 'Guardar';
             }
-        });
+        };
 
-        document.getElementById('cancelEditBtn').addEventListener('click', () => {
+        document.getElementById('cancelEditBtn').onclick = () => {
             state.adminMoveLocation = null;
             editForm.style.display = 'none';
             bodyDiv.style.display = 'block';
             toggleEditBtn.textContent = '✏️ Editar reclamo';
-        });
+        };
     }
        // Si la foto ya fue cargada por el popup (o por una apertura previa del detalle),
        // `cacheHasEntry` ya es true y esto ni se ejecuta — no hay una segunda descarga.
