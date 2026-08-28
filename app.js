@@ -482,17 +482,6 @@ function setupApplicationEvents() {
         document.getElementById('detailPanel').classList.remove('visible');
     });
 
-    const trigger = document.getElementById('recentClaimsTrigger');
-    const popup = document.getElementById('recentClaimsPopup');
-    trigger.addEventListener('click', (e) => {
-        e.stopPropagation();
-        popup.classList.toggle('hidden');
-    });
-    document.getElementById('closeRecentPopup').addEventListener('click', (e) => {
-        e.stopPropagation();
-        popup.classList.add('hidden');
-    });
-
     document.getElementById('categoryFilterBar').addEventListener('click', (e) => {
         const btn = e.target.closest('.filter-btn');
         if (!btn) return;
@@ -954,6 +943,7 @@ async function executeSubmitForm() {
     const location = state.currentLocation;
 
     if (!title) return flashErrorMessage('Ingresa el título del reclamo');
+    if (title.length > 50) return flashErrorMessage(`El título es muy largo (${title.length}/50 caracteres). Achicalo un poco.`);
     if (!category) return flashErrorMessage('Selecciona una categoría');
     if (!location) return flashErrorMessage('⚠️ Debes seleccionar ubicación: Usa GPS o señala en el mapa');
     if (!name) return flashErrorMessage('Ingresa tu nombre');
@@ -1597,7 +1587,6 @@ if (isOldFormat) {
     });
 }
     state.map.closePopup();
-    document.getElementById('recentClaimsPopup').classList.add('hidden');
 }
 
 function shareClaimOn(platform, title, url) {
@@ -1622,41 +1611,11 @@ function shareClaimOn(platform, title, url) {
     if (shareUrl) window.open(shareUrl, '_blank');
 }
 
-function renderPublicClaimsList() {
-    let approved = state.claims.filter(c => c.status === 'approved');
-
-    if (state.activeCategoryFilter !== 'all') {
-        approved = approved.filter(c => c.category === state.activeCategoryFilter);
-    }
-
-    approved.sort((a, b) => {
-        const aPrio = calculatePriority(a.adhesions || 0);
-        const bPrio = calculatePriority(b.adhesions || 0);
-        const priorityOrder = { urgente: 0, prioritario: 1, normal: 2 };
-        if (priorityOrder[aPrio] !== priorityOrder[bPrio]) {
-            return priorityOrder[aPrio] - priorityOrder[bPrio];
-        }
-        return (b.adhesions || 0) - (a.adhesions || 0);
-    });
-
-    document.getElementById('claimCounter').textContent = approved.length;
-
-    const html = approved.map((claim) => {
-        const priorityLabel = getPriorityLabel(claim.adhesions || 0);
-        const locText = escapeHtml(claim.address || `${claim.lat?.toFixed(4)}, ${claim.lng?.toFixed(4)}` || 'Ubicación registrada');
-        return `
-            <div class="claim-item" onclick="globalOpenDetailWindow('${claim._fbId}')">
-                <div class="claim-item-header">
-                    <span class="claim-item-id">${escapeHtml(claim.claimId)}</span>
-                    <span class="claim-item-status">${priorityLabel}</span>
-                </div>
-                <div class="claim-item-name">${escapeHtml(claim.title || claim.claimId)}</div>
-                <div class="claim-item-desc">${locText}...</div>
-            </div>
-        `;
-    }).join('');
-    document.getElementById('claimsList').innerHTML = html || '<div style="padding:16px; font-size:11px; color:#64748b; text-align:center; font-weight:600;">Sin reportes para esta sección.</div>';
-}
+// El widget de "Recientes" (contador + popup con la lista) se sacó del sitio.
+// Se deja esta función vacía en vez de tocar sus ~9 puntos de llamada en todo
+// el archivo — sigue siendo un no-op seguro si en algún momento se reintroduce
+// una lista de reclamos recientes en otra parte de la UI.
+function renderPublicClaimsList() {}
 
 // ---------------------------------------------------------------------------
 // ACCIONES ADMIN

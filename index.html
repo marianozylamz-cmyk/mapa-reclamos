@@ -58,18 +58,6 @@
                     <button class="filter-btn" data-cat="otro" title="Otros" aria-label="Otros"><img class="filter-icon" src="otros.svg" alt="Otros"></button>
                 </div>
 
-                <div class="recent-claims-trigger" id="recentClaimsTrigger">
-                    💬 <span class="trigger-text">Recientes</span> (<span id="claimCounter">0</span>)
-                </div>
-
-                <div class="recent-claims-popup hidden" id="recentClaimsPopup">
-                    <div class="recent-popup-header">
-                        <h4>📌 RECLAMOS RECIENTES</h4>
-                        <button id="closeRecentPopup" class="close-popup-btn" aria-label="Cerrar">×</button>
-                    </div>
-                    <div class="recent-popup-body" id="claimsList"></div>
-                </div>
-
                <div id="mapClickOverlay" class="map-click-overlay hidden"></div>
 
 <div id="mapClickBanner" class="map-click-banner hidden">
@@ -111,7 +99,7 @@
                 <div id="claimFormBody">
                     <div class="form-section">
                         <h3>1. Título del Reclamo</h3>
-                        <input type="text" id="claimTitle" placeholder="Ej: Bache en Alsina, Árbol caído, Luminaria rota..." class="input-field">
+                        <input type="text" id="claimTitle" maxlength="50" placeholder="Ej: Bache en Alsina, Árbol caído, Luminaria rota..." class="input-field">
                     </div>
 
                     <div class="form-section">
